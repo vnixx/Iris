@@ -35,7 +35,7 @@ public struct HTTPResponse<Model> {
     /// 获取 model，失败时抛出错误
     public func unwrap() throws -> Model {
         guard let model else {
-            throw IrisError.decodingFailed
+            throw IrisError.decodingFailed(nil)
         }
         return model
     }
