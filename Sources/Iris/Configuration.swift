@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import Alamofire
 
 /// Iris 全局配置
 public struct IrisConfiguration {
@@ -16,9 +17,6 @@ public struct IrisConfiguration {
     /// 默认超时时间
     public var defaultTimeout: TimeInterval
     
-    /// 默认验证类型
-    public var defaultValidationType: ValidationType
-    
     /// JSON 解码器
     public var jsonDecoder: JSONDecoder
     
@@ -28,32 +26,30 @@ public struct IrisConfiguration {
     /// 插件列表
     public var plugins: [PluginType]
     
+    /// 自定义 Alamofire Session
+    public var session: Session
+    
     /// Stub 行为（nil 表示正常请求）
     public var stubBehavior: StubBehavior?
-    
-    /// 是否启用日志
-    public var isLoggingEnabled: Bool
     
     public init(
         baseURL: URL? = nil,
         defaultHeaders: [String: String] = [:],
         defaultTimeout: TimeInterval = 30,
-        defaultValidationType: ValidationType = .none,
         jsonDecoder: JSONDecoder = JSONDecoder(),
         jsonEncoder: JSONEncoder = JSONEncoder(),
         plugins: [PluginType] = [],
-        stubBehavior: StubBehavior? = nil,
-        isLoggingEnabled: Bool = false
+        session: Session = Session.default,
+        stubBehavior: StubBehavior? = nil
     ) {
         self.baseURL = baseURL
         self.defaultHeaders = defaultHeaders
         self.defaultTimeout = defaultTimeout
-        self.defaultValidationType = defaultValidationType
         self.jsonDecoder = jsonDecoder
         self.jsonEncoder = jsonEncoder
         self.plugins = plugins
+        self.session = session
         self.stubBehavior = stubBehavior
-        self.isLoggingEnabled = isLoggingEnabled
     }
 }
 
@@ -66,19 +62,6 @@ public extension Iris {
     /// 配置 Iris
     static func configure(_ configuration: IrisConfiguration) {
         self.configuration = configuration
-    }
-    
-    /// 便捷配置方法
-    static func configure(
-        baseURL: URL? = nil,
-        defaultHeaders: [String: String] = [:],
-        defaultTimeout: TimeInterval = 30,
-        plugins: [PluginType] = []
-    ) {
-        configuration.baseURL = baseURL ?? configuration.baseURL
-        configuration.defaultHeaders.merge(defaultHeaders) { _, new in new }
-        configuration.defaultTimeout = defaultTimeout
-        configuration.plugins = plugins
     }
 }
 
@@ -134,24 +117,17 @@ public extension IrisConfiguration {
         return config
     }
     
+    /// 链式设置 Session
+    func session(_ session: Session) -> IrisConfiguration {
+        var config = self
+        config.session = session
+        return config
+    }
+    
     /// 链式设置 Stub 行为
     func stub(_ behavior: StubBehavior) -> IrisConfiguration {
         var config = self
         config.stubBehavior = behavior
-        return config
-    }
-    
-    /// 链式启用日志
-    func enableLogging(_ enabled: Bool = true) -> IrisConfiguration {
-        var config = self
-        config.isLoggingEnabled = enabled
-        return config
-    }
-    
-    /// 链式设置验证类型
-    func validation(_ type: ValidationType) -> IrisConfiguration {
-        var config = self
-        config.defaultValidationType = type
         return config
     }
     
@@ -168,4 +144,15 @@ public extension IrisConfiguration {
         config.jsonEncoder = encoder
         return config
     }
+}
+
+// MARK: - Stub Behavior
+
+/// Stub 行为
+public enum StubBehavior {
+    /// 立即返回
+    case immediate
+    
+    /// 延迟返回
+    case delayed(TimeInterval)
 }

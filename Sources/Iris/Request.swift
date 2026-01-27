@@ -2,30 +2,44 @@
 //  Request.swift
 //  Iris
 //
+//  Iris 特色：链式构建 Request，所有配置集中在一处
+//
 
 import Foundation
 
-/// 网络请求封装
-public struct Request<ResponseModel: Decodable>: RequestConfigurable, SampleDataProvider {
-    // MARK: - Properties
+/// 网络请求封装（Iris 特色的链式 API）
+public struct Request<ResponseType: Decodable>: TargetType {
+    
+    // MARK: - TargetType Properties
+    
+    public var baseURL: URL {
+        _baseURL ?? Iris.configuration.baseURL ?? URL(string: "https://example.com")!
+    }
     
     public var path: String = ""
+    
     public var method: Method = .get
+    
     public var task: Task = .requestPlain
+    
     public var headers: [String: String]?
-    public var timeout: TimeInterval = 30
+    
     public var validationType: ValidationType = .none
     
+    public var sampleData: Data = Data()
+    
+    // MARK: - Iris Extended Properties
+    
     /// 自定义 baseURL（覆盖全局配置）
-    public var baseURL: URL?
+    private var _baseURL: URL?
+    
+    /// 超时时间
+    public var timeout: TimeInterval = 30
     
     /// JSON 解码器
     public var decoder: JSONDecoder?
     
-    /// Stub 响应数据（用于测试）
-    public var sampleResponse: StubResponse = StubResponse()
-    
-    /// Stub 行为（覆盖全局配置，nil 使用全局配置）
+    /// Stub 行为（覆盖全局配置）
     public var stubBehavior: StubBehavior?
     
     // MARK: - Initialization
@@ -35,21 +49,21 @@ public struct Request<ResponseModel: Decodable>: RequestConfigurable, SampleData
     // MARK: - Basic Configuration (Chainable)
     
     /// 设置请求路径
-    public func path(_ path: String) -> Request<ResponseModel> {
+    public func path(_ path: String) -> Request<ResponseType> {
         var request = self
         request.path = path
         return request
     }
     
     /// 设置 HTTP 方法
-    public func method(_ method: Method) -> Request<ResponseModel> {
+    public func method(_ method: Method) -> Request<ResponseType> {
         var request = self
         request.method = method
         return request
     }
     
     /// 设置超时时间
-    public func timeout(_ timeout: TimeInterval) -> Request<ResponseModel> {
+    public func timeout(_ timeout: TimeInterval) -> Request<ResponseType> {
         var request = self
         request.timeout = timeout
         return request
@@ -58,14 +72,14 @@ public struct Request<ResponseModel: Decodable>: RequestConfigurable, SampleData
     // MARK: - Headers Configuration
     
     /// 设置请求头
-    public func headers(_ headers: [String: String]) -> Request<ResponseModel> {
+    public func headers(_ headers: [String: String]) -> Request<ResponseType> {
         var request = self
         request.headers = headers
         return request
     }
     
     /// 添加单个请求头
-    public func header(_ key: String, _ value: String) -> Request<ResponseModel> {
+    public func header(_ key: String, _ value: String) -> Request<ResponseType> {
         var request = self
         var currentHeaders = request.headers ?? [:]
         currentHeaders[key] = value
@@ -74,68 +88,63 @@ public struct Request<ResponseModel: Decodable>: RequestConfigurable, SampleData
     }
     
     /// 添加 Authorization Header
-    public func authorization(_ value: String) -> Request<ResponseModel> {
+    public func authorization(_ value: String) -> Request<ResponseType> {
         header("Authorization", value)
     }
     
     /// 添加 Bearer Token
-    public func bearerToken(_ token: String) -> Request<ResponseModel> {
+    public func bearerToken(_ token: String) -> Request<ResponseType> {
         header("Authorization", "Bearer \(token)")
-    }
-    
-    /// 添加 Content-Type Header
-    public func contentType(_ value: String) -> Request<ResponseModel> {
-        header("Content-Type", value)
     }
     
     // MARK: - Task Configuration
     
     /// 设置请求任务
-    public func task(_ task: Task) -> Request<ResponseModel> {
+    public func task(_ task: Task) -> Request<ResponseType> {
         var request = self
         request.task = task
         return request
     }
     
     /// 设置 URL 参数
-    public func query(_ parameters: [String: Any]) -> Request<ResponseModel> {
+    public func query(_ parameters: [String: Any]) -> Request<ResponseType> {
         var request = self
-        request.task = .requestParameters(parameters: parameters, encoding: .url)
+        request.task = .requestParameters(parameters: parameters, encoding: URLEncoding.queryString)
         return request
     }
     
     /// 设置 JSON Body
-    public func body(_ parameters: [String: Any]) -> Request<ResponseModel> {
+    public func body(_ parameters: [String: Any]) -> Request<ResponseType> {
         var request = self
-        request.task = .requestParameters(parameters: parameters, encoding: .json)
+        request.task = .requestParameters(parameters: parameters, encoding: JSONEncoding.default)
         return request
     }
     
     /// 设置 Encodable Body
-    public func body<T: Encodable>(_ encodable: T) -> Request<ResponseModel> {
+    public func body<T: Encodable>(_ encodable: T) -> Request<ResponseType> {
         var request = self
         request.task = .requestJSONEncodable(encodable)
         return request
     }
     
     /// 设置 Encodable Body（自定义 Encoder）
-    public func body<T: Encodable>(_ encodable: T, encoder: JSONEncoder) -> Request<ResponseModel> {
+    public func body<T: Encodable>(_ encodable: T, encoder: JSONEncoder) -> Request<ResponseType> {
         var request = self
         request.task = .requestCustomJSONEncodable(encodable, encoder: encoder)
         return request
     }
     
     /// 设置原始 Data Body
-    public func body(_ data: Data) -> Request<ResponseModel> {
+    public func body(_ data: Data) -> Request<ResponseType> {
         var request = self
         request.task = .requestData(data)
         return request
     }
     
     /// 设置 Form URL Encoded Body
-    public func formBody(_ parameters: [String: Any]) -> Request<ResponseModel> {
+    public func formBody(_ parameters: [String: Any]) -> Request<ResponseType> {
         var request = self
-        request.task = .requestParameters(parameters: parameters, encoding: .urlEncodedBody)
+        request.task = .requestParameters(parameters: parameters, encoding: URLEncoding.httpBody)
         return request
     }
     
@@ -143,8 +152,8 @@ public struct Request<ResponseModel: Decodable>: RequestConfigurable, SampleData
     public func composite(
         query: [String: Any],
         body: [String: Any],
-        bodyEncoding: ParameterEncoding = .json
-    ) -> Request<ResponseModel> {
+        bodyEncoding: ParameterEncoding = JSONEncoding.default
+    ) -> Request<ResponseType> {
         var request = self
         request.task = .requestCompositeParameters(
             bodyParameters: body,
@@ -157,33 +166,40 @@ public struct Request<ResponseModel: Decodable>: RequestConfigurable, SampleData
     // MARK: - Upload Configuration
     
     /// 上传文件
-    public func upload(file url: URL) -> Request<ResponseModel> {
+    public func upload(file url: URL) -> Request<ResponseType> {
         var request = self
         request.task = .uploadFile(url)
         return request
     }
     
     /// 上传 Multipart 数据
-    public func upload(multipart parts: [MultipartFormBodyPart]) -> Request<ResponseModel> {
+    public func upload(multipart formData: MultipartFormData) -> Request<ResponseType> {
         var request = self
-        request.task = .uploadMultipart(parts)
+        request.task = .uploadMultipartFormData(formData)
+        return request
+    }
+    
+    /// 上传 Multipart 数据（便捷方法）
+    public func upload(multipart parts: [MultipartFormBodyPart]) -> Request<ResponseType> {
+        var request = self
+        request.task = .uploadMultipartFormData(MultipartFormData(parts: parts))
         return request
     }
     
     /// 上传 Multipart 数据（带 URL 参数）
     public func upload(
-        multipart parts: [MultipartFormBodyPart],
+        multipart formData: MultipartFormData,
         query: [String: Any]
-    ) -> Request<ResponseModel> {
+    ) -> Request<ResponseType> {
         var request = self
-        request.task = .uploadCompositeMultipart(parts, urlParameters: query)
+        request.task = .uploadCompositeMultipartFormData(formData, urlParameters: query)
         return request
     }
     
     // MARK: - Download Configuration
     
     /// 下载文件
-    public func download(to destination: @escaping DownloadDestination) -> Request<ResponseModel> {
+    public func download(to destination: @escaping DownloadDestination) -> Request<ResponseType> {
         var request = self
         request.task = .downloadDestination(destination)
         return request
@@ -192,76 +208,56 @@ public struct Request<ResponseModel: Decodable>: RequestConfigurable, SampleData
     /// 下载文件（带参数）
     public func download(
         parameters: [String: Any],
-        encoding: ParameterEncoding = .url,
+        encoding: ParameterEncoding = URLEncoding.default,
         to destination: @escaping DownloadDestination
-    ) -> Request<ResponseModel> {
+    ) -> Request<ResponseType> {
         var request = self
         request.task = .downloadParameters(parameters: parameters, encoding: encoding, destination: destination)
         return request
     }
     
-    /// 下载到默认位置
-    public func download() -> Request<ResponseModel> {
-        download(to: Task.defaultDownloadDestination)
-    }
-    
-    /// 下载到 Documents 目录
-    public func downloadToDocuments(fileName: String? = nil) -> Request<ResponseModel> {
-        download(to: Task.documentsDownloadDestination(fileName: fileName))
-    }
-    
-    /// 下载到 Caches 目录
-    public func downloadToCaches(fileName: String? = nil) -> Request<ResponseModel> {
-        download(to: Task.cachesDownloadDestination(fileName: fileName))
-    }
-    
     // MARK: - Validation Configuration
     
     /// 设置验证类型
-    public func validate(_ type: ValidationType) -> Request<ResponseModel> {
+    public func validate(_ type: ValidationType) -> Request<ResponseType> {
         var request = self
         request.validationType = type
         return request
     }
     
     /// 验证成功状态码 (2xx)
-    public func validateSuccessCodes() -> Request<ResponseModel> {
+    public func validateSuccessCodes() -> Request<ResponseType> {
         validate(.successCodes)
     }
     
     /// 验证成功和重定向状态码 (2xx, 3xx)
-    public func validateSuccessAndRedirectCodes() -> Request<ResponseModel> {
+    public func validateSuccessAndRedirectCodes() -> Request<ResponseType> {
         validate(.successAndRedirectCodes)
     }
     
     /// 验证自定义状态码
-    public func validate(statusCodes: [Int]) -> Request<ResponseModel> {
+    public func validate(statusCodes: [Int]) -> Request<ResponseType> {
         validate(.customCodes(statusCodes))
-    }
-    
-    /// 验证状态码范围
-    public func validate(statusCode range: ClosedRange<Int>) -> Request<ResponseModel> {
-        validate(.range(range))
     }
     
     // MARK: - Other Configuration
     
     /// 设置 baseURL
-    public func baseURL(_ url: URL?) -> Request<ResponseModel> {
+    public func baseURL(_ url: URL?) -> Request<ResponseType> {
         var request = self
-        request.baseURL = url
+        request._baseURL = url
         return request
     }
     
     /// 设置 baseURL（从字符串）
-    public func baseURL(_ urlString: String) -> Request<ResponseModel> {
+    public func baseURL(_ urlString: String) -> Request<ResponseType> {
         var request = self
-        request.baseURL = URL(string: urlString)
+        request._baseURL = URL(string: urlString)
         return request
     }
     
     /// 设置 JSON 解码器
-    public func decoder(_ decoder: JSONDecoder) -> Request<ResponseModel> {
+    public func decoder(_ decoder: JSONDecoder) -> Request<ResponseType> {
         var request = self
         request.decoder = decoder
         return request
@@ -269,63 +265,65 @@ public struct Request<ResponseModel: Decodable>: RequestConfigurable, SampleData
     
     // MARK: - Stub Configuration
     
-    /// 设置 Stub 响应
-    public func stub(_ response: StubResponse) -> Request<ResponseModel> {
+    /// 设置 Stub 数据
+    public func stub(_ data: Data) -> Request<ResponseType> {
         var request = self
-        request.sampleResponse = response
+        request.sampleData = data
+        return request
+    }
+    
+    /// 设置 Stub 数据（从 Encodable）
+    public func stub<T: Encodable>(_ model: T, encoder: JSONEncoder = JSONEncoder()) -> Request<ResponseType> {
+        var request = self
+        request.sampleData = (try? encoder.encode(model)) ?? Data()
+        return request
+    }
+    
+    /// 设置 Stub 数据（从字符串）
+    public func stub(_ string: String) -> Request<ResponseType> {
+        var request = self
+        request.sampleData = string.data(using: .utf8) ?? Data()
         return request
     }
     
     /// 设置 Stub 行为
-    public func stub(behavior: StubBehavior) -> Request<ResponseModel> {
+    public func stub(behavior: StubBehavior) -> Request<ResponseType> {
         var request = self
         request.stubBehavior = behavior
         return request
     }
     
-    /// 启用立即 Stub
-    public func stubImmediate(_ response: StubResponse) -> Request<ResponseModel> {
-        var request = self
-        request.sampleResponse = response
-        request.stubBehavior = .immediate
-        return request
-    }
-    
-    /// 启用延迟 Stub
-    public func stubDelayed(_ response: StubResponse, delay: TimeInterval) -> Request<ResponseModel> {
-        var request = self
-        request.sampleResponse = response
-        request.stubBehavior = .delayed(delay)
-        return request
-    }
-    
     // MARK: - Execution
     
-    /// 发送请求
-    public func fire() async throws -> HTTPResponse<ResponseModel> {
+    /// 发送请求，返回带泛型的 TypedResponse
+    public func fire() async throws -> TypedResponse<ResponseType> {
         return try await Iris.send(self)
     }
     
-    /// 发送请求并获取模型
-    public func fetch() async throws -> ResponseModel {
-        let response = try await fire()
-        return try response.unwrap()
+    /// 发送请求，返回原始 Response（与 Moya 兼容）
+    public func fireRaw() async throws -> Response {
+        return try await Iris.sendRaw(self)
+    }
+    
+    /// 发送请求并解码为模型
+    public func fetch() async throws -> ResponseType {
+        return try await Iris.fetch(self)
     }
 }
 
 // MARK: - Convenience Static Methods
 
-public extension Request where ResponseModel == EmptyResponse {
+public extension Request where ResponseType == Empty {
     /// 创建一个不需要响应模型的请求
-    static func plain() -> Request<EmptyResponse> {
-        Request<EmptyResponse>()
+    static func plain() -> Request<Empty> {
+        Request<Empty>()
     }
 }
 
 // MARK: - Empty Response
 
 /// 空响应类型（用于不需要解析响应的请求）
-public struct EmptyResponse: Decodable {
+public struct Empty: Decodable {
     public init() {}
     
     public init(from decoder: Decoder) throws {

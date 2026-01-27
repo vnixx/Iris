@@ -2,74 +2,51 @@
 //  ValidationType.swift
 //  Iris
 //
+//  Copied from Moya
+//
 
 import Foundation
 
-/// 响应验证类型
+/// Represents the status codes to validate through Alamofire.
 public enum ValidationType {
-    /// 不验证状态码
+
+    /// No validation.
     case none
-    
-    /// 仅验证成功状态码 (2xx)
+
+    /// Validate success codes (only 2xx).
     case successCodes
-    
-    /// 验证成功和重定向状态码 (2xx, 3xx)
+
+    /// Validate success codes and redirection codes (only 2xx and 3xx).
     case successAndRedirectCodes
-    
-    /// 自定义状态码范围
+
+    /// Validate only the given status codes.
     case customCodes([Int])
-    
-    /// 自定义状态码范围（使用 Range）
-    case range(ClosedRange<Int>)
-    
-    /// 验证状态码是否有效
-    public func validate(statusCode: Int) -> Bool {
-        switch self {
-        case .none:
-            return true
-        case .successCodes:
-            return (200..<300).contains(statusCode)
-        case .successAndRedirectCodes:
-            return (200..<400).contains(statusCode)
-        case .customCodes(let codes):
-            return codes.contains(statusCode)
-        case .range(let range):
-            return range.contains(statusCode)
-        }
-    }
-    
-    /// 获取有效的状态码集合（用于 Alamofire）
+
+    /// The list of HTTP status codes to validate.
     public var statusCodes: [Int] {
         switch self {
-        case .none:
-            return Array(100..<600)
         case .successCodes:
             return Array(200..<300)
         case .successAndRedirectCodes:
             return Array(200..<400)
         case .customCodes(let codes):
             return codes
-        case .range(let range):
-            return Array(range)
+        case .none:
+            return []
         }
     }
 }
 
-// MARK: - Equatable
-
 extension ValidationType: Equatable {
+
     public static func == (lhs: ValidationType, rhs: ValidationType) -> Bool {
         switch (lhs, rhs) {
-        case (.none, .none):
+        case (.none, .none),
+             (.successCodes, .successCodes),
+             (.successAndRedirectCodes, .successAndRedirectCodes):
             return true
-        case (.successCodes, .successCodes):
-            return true
-        case (.successAndRedirectCodes, .successAndRedirectCodes):
-            return true
-        case (.customCodes(let lCodes), .customCodes(let rCodes)):
-            return lCodes == rCodes
-        case (.range(let lRange), .range(let rRange)):
-            return lRange == rRange
+        case (.customCodes(let code1), .customCodes(let code2)):
+            return code1 == code2
         default:
             return false
         }

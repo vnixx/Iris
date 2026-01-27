@@ -2,164 +2,96 @@
 //  MultipartFormData.swift
 //  Iris
 //
+//  Copied from Moya
+//
 
 import Foundation
+import Alamofire
 
-/// Multipart 表单数据部分
-public struct MultipartFormBodyPart {
-    /// 数据提供方式
-    public enum Provider {
-        case data(Data)
+/// Represents "multipart/form-data" for an upload.
+public struct MultipartFormData: Hashable {
+
+    /// Method to provide the form data.
+    public enum FormDataProvider: Hashable {
+        case data(Foundation.Data)
         case file(URL)
-        case stream(InputStream, length: UInt64)
+        case stream(InputStream, UInt64)
     }
-    
-    public let provider: Provider
-    public let name: String
-    public let fileName: String?
-    public let mimeType: String?
-    
-    public init(
-        provider: Provider,
-        name: String,
-        fileName: String? = nil,
-        mimeType: String? = nil
-    ) {
+
+    /// `FileManager` to use for file operations, if needed. `FileManager.default` by default.
+    public let fileManager: FileManager
+
+    /// Separates ``parts`` in the encoded form data. `nil` by default.
+    public let boundary: String?
+
+    /// Blocks of data to send, separated with ``boundary``.
+    public let parts: [MultipartFormBodyPart]
+
+    public init(fileManager: FileManager = .default, boundary: String? = nil, parts: [MultipartFormBodyPart]) {
+        self.fileManager = fileManager
+        self.boundary = boundary
+        self.parts = parts
+    }
+}
+
+extension MultipartFormData: ExpressibleByArrayLiteral {
+    public init(arrayLiteral elements: MultipartFormBodyPart...) {
+        self.init(parts: elements)
+    }
+}
+
+/// Represents the body part of "multipart/form-data" for an upload.
+public struct MultipartFormBodyPart: Hashable {
+
+    public init(provider: MultipartFormData.FormDataProvider, name: String, fileName: String? = nil, mimeType: String? = nil) {
         self.provider = provider
         self.name = name
         self.fileName = fileName
         self.mimeType = mimeType
     }
+
+    /// The method being used for providing form data.
+    public let provider: MultipartFormData.FormDataProvider
+
+    /// The name.
+    public let name: String
+
+    /// The file name.
+    public let fileName: String?
+
+    /// The MIME type
+    public let mimeType: String?
+
 }
 
-// MARK: - Convenience Initializers
+// MARK: RequestMultipartFormData appending
+internal extension RequestMultipartFormData {
+    func append(data: Data, bodyPart: MultipartFormBodyPart) {
+        append(data, withName: bodyPart.name, fileName: bodyPart.fileName, mimeType: bodyPart.mimeType)
+    }
 
-public extension MultipartFormBodyPart {
-    /// 从 Data 创建
-    static func data(
-        _ data: Data,
-        name: String,
-        fileName: String? = nil,
-        mimeType: String? = nil
-    ) -> MultipartFormBodyPart {
-        MultipartFormBodyPart(
-            provider: .data(data),
-            name: name,
-            fileName: fileName,
-            mimeType: mimeType
-        )
+    func append(fileURL url: URL, bodyPart: MultipartFormBodyPart) {
+        if let fileName = bodyPart.fileName, let mimeType = bodyPart.mimeType {
+            append(url, withName: bodyPart.name, fileName: fileName, mimeType: mimeType)
+        } else {
+            append(url, withName: bodyPart.name)
+        }
     }
-    
-    /// 从文件 URL 创建
-    static func file(
-        _ url: URL,
-        name: String,
-        fileName: String? = nil,
-        mimeType: String? = nil
-    ) -> MultipartFormBodyPart {
-        MultipartFormBodyPart(
-            provider: .file(url),
-            name: name,
-            fileName: fileName ?? url.lastPathComponent,
-            mimeType: mimeType ?? url.mimeType
-        )
-    }
-    
-    /// 从 InputStream 创建
-    static func stream(
-        _ stream: InputStream,
-        length: UInt64,
-        name: String,
-        fileName: String,
-        mimeType: String? = nil
-    ) -> MultipartFormBodyPart {
-        MultipartFormBodyPart(
-            provider: .stream(stream, length: length),
-            name: name,
-            fileName: fileName,
-            mimeType: mimeType
-        )
-    }
-    
-    /// 从字符串创建表单字段
-    static func text(_ value: String, name: String) -> MultipartFormBodyPart {
-        MultipartFormBodyPart(
-            provider: .data(value.data(using: .utf8) ?? Data()),
-            name: name,
-            fileName: nil,
-            mimeType: nil
-        )
-    }
-}
 
-// MARK: - MIME Type Detection
+    func append(stream: InputStream, length: UInt64, bodyPart: MultipartFormBodyPart) {
+        append(stream, withLength: length, name: bodyPart.name, fileName: bodyPart.fileName ?? "", mimeType: bodyPart.mimeType ?? "")
+    }
 
-private extension URL {
-    var mimeType: String {
-        let pathExtension = self.pathExtension.lowercased()
-        
-        let mimeTypes: [String: String] = [
-            // Images
-            "jpg": "image/jpeg",
-            "jpeg": "image/jpeg",
-            "png": "image/png",
-            "gif": "image/gif",
-            "webp": "image/webp",
-            "svg": "image/svg+xml",
-            "ico": "image/x-icon",
-            "bmp": "image/bmp",
-            "tiff": "image/tiff",
-            "tif": "image/tiff",
-            "heic": "image/heic",
-            "heif": "image/heif",
-            
-            // Videos
-            "mp4": "video/mp4",
-            "mov": "video/quicktime",
-            "avi": "video/x-msvideo",
-            "wmv": "video/x-ms-wmv",
-            "flv": "video/x-flv",
-            "webm": "video/webm",
-            "mkv": "video/x-matroska",
-            
-            // Audio
-            "mp3": "audio/mpeg",
-            "wav": "audio/wav",
-            "aac": "audio/aac",
-            "ogg": "audio/ogg",
-            "flac": "audio/flac",
-            "m4a": "audio/mp4",
-            
-            // Documents
-            "pdf": "application/pdf",
-            "doc": "application/msword",
-            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "xls": "application/vnd.ms-excel",
-            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "ppt": "application/vnd.ms-powerpoint",
-            "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            
-            // Text
-            "txt": "text/plain",
-            "html": "text/html",
-            "htm": "text/html",
-            "css": "text/css",
-            "js": "application/javascript",
-            "json": "application/json",
-            "xml": "application/xml",
-            "csv": "text/csv",
-            
-            // Archives
-            "zip": "application/zip",
-            "rar": "application/x-rar-compressed",
-            "7z": "application/x-7z-compressed",
-            "tar": "application/x-tar",
-            "gz": "application/gzip",
-            
-            // Others
-            "bin": "application/octet-stream"
-        ]
-        
-        return mimeTypes[pathExtension] ?? "application/octet-stream"
+    func applyMoyaMultipartFormData(_ multipartFormData: MultipartFormData) {
+        for bodyPart in multipartFormData.parts {
+            switch bodyPart.provider {
+            case .data(let data):
+                append(data: data, bodyPart: bodyPart)
+            case .file(let url):
+                append(fileURL: url, bodyPart: bodyPart)
+            case .stream(let stream, let length):
+                append(stream: stream, length: length, bodyPart: bodyPart)
+            }
+        }
     }
 }
