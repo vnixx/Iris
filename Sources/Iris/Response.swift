@@ -2,7 +2,7 @@
 //  Response.swift
 //  Iris
 //
-//  Copied from Moya
+//  基于 Moya Response，添加泛型支持
 //
 
 import Foundation
@@ -14,43 +14,56 @@ import AppKit
 public typealias Image = NSImage
 #endif
 
-/// Represents a response to a `MoyaProvider.request`.
-public final class Response: CustomDebugStringConvertible, Equatable {
+// MARK: - Response
 
-    /// The status code of the response.
+/// 网络响应
+public struct Response<Model>: CustomDebugStringConvertible {
+    
+    /// 解码后的模型（Plugin 场景为 nil）
+    public let model: Model?
+    
+    /// 状态码
     public let statusCode: Int
 
-    /// The response data.
+    /// 响应数据
     public let data: Data
 
-    /// The original URLRequest for the response.
+    /// 原始 URLRequest
     public let request: URLRequest?
 
-    /// The HTTPURLResponse object.
+    /// HTTPURLResponse 对象
     public let response: HTTPURLResponse?
 
-    public init(statusCode: Int, data: Data, request: URLRequest? = nil, response: HTTPURLResponse? = nil) {
+    public init(model: Model? = nil, statusCode: Int, data: Data, request: URLRequest? = nil, response: HTTPURLResponse? = nil) {
+        self.model = model
         self.statusCode = statusCode
         self.data = data
         self.request = request
         self.response = response
     }
 
-    /// A text description of the `Response`.
+    /// 文本描述
     public var description: String {
         "Status Code: \(statusCode), Data Length: \(data.count)"
     }
 
-    /// A text description of the `Response`. Suitable for debugging.
+    /// 调试描述
     public var debugDescription: String { description }
-
-    public static func == (lhs: Response, rhs: Response) -> Bool {
-        lhs.statusCode == rhs.statusCode
-            && lhs.data == rhs.data
-            && lhs.response == rhs.response
+    
+    // MARK: - Model Access
+    
+    /// 获取 model，如果为 nil 则抛出错误
+    public func unwrap() throws -> Model {
+        guard let model else {
+            throw IrisError.objectMapping(
+                NSError(domain: "Iris", code: -1, userInfo: [NSLocalizedDescriptionKey: "Model is nil"]),
+                asRaw()
+            )
+        }
+        return model
     }
     
-    // MARK: - Iris Convenience Properties
+    // MARK: - Convenience Properties
     
     /// 是否成功 (2xx)
     public var isSuccess: Bool {
@@ -71,101 +84,70 @@ public final class Response: CustomDebugStringConvertible, Equatable {
     public var isServerError: Bool {
         (500..<600).contains(statusCode)
     }
-}
+    
+    // MARK: - Mapping Methods
 
-public extension Response {
-
-    /**
-     Returns the `Response` if the `statusCode` falls within the specified range.
-
-     - parameters:
-        - statusCodes: The range of acceptable status codes.
-     - throws: `IrisError.statusCode` when others are encountered.
-    */
-    func filter<R: RangeExpression>(statusCodes: R) throws -> Response where R.Bound == Int {
+    /// 过滤状态码
+    public func filter<R: RangeExpression>(statusCodes: R) throws -> Response where R.Bound == Int {
         guard statusCodes.contains(statusCode) else {
-            throw IrisError.statusCode(self)
+            throw IrisError.statusCode(asRaw())
         }
         return self
     }
 
-    /**
-     Returns the `Response` if it has the specified `statusCode`.
-
-     - parameters:
-        - statusCode: The acceptable status code.
-     - throws: `IrisError.statusCode` when others are encountered.
-    */
-    func filter(statusCode: Int) throws -> Response {
-        try filter(statusCodes: statusCode...statusCode)
+    /// 过滤指定状态码
+    public func filter(statusCode code: Int) throws -> Response {
+        try filter(statusCodes: code...code)
     }
 
-    /**
-     Returns the `Response` if the `statusCode` falls within the range 200 - 299.
-
-     - throws: `IrisError.statusCode` when others are encountered.
-    */
-    func filterSuccessfulStatusCodes() throws -> Response {
+    /// 过滤成功状态码 (2xx)
+    public func filterSuccessfulStatusCodes() throws -> Response {
         try filter(statusCodes: 200...299)
     }
 
-    /**
-     Returns the `Response` if the `statusCode` falls within the range 200 - 399.
-
-     - throws: `IrisError.statusCode` when others are encountered.
-    */
-    func filterSuccessfulStatusAndRedirectCodes() throws -> Response {
+    /// 过滤成功和重定向状态码 (2xx, 3xx)
+    public func filterSuccessfulStatusAndRedirectCodes() throws -> Response {
         try filter(statusCodes: 200...399)
     }
 
-    /// Maps data received from the signal into an Image.
-    func mapImage() throws -> Image {
+    /// 映射为图片
+    public func mapImage() throws -> Image {
         guard let image = Image(data: data) else {
-            throw IrisError.imageMapping(self)
+            throw IrisError.imageMapping(asRaw())
         }
         return image
     }
 
-    /// Maps data received from the signal into a JSON object.
-    ///
-    /// - parameter failsOnEmptyData: A Boolean value determining
-    /// whether the mapping should fail if the data is empty.
-    func mapJSON(failsOnEmptyData: Bool = true) throws -> Any {
+    /// 映射为 JSON
+    public func mapJSON(failsOnEmptyData: Bool = true) throws -> Any {
         do {
             return try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
         } catch {
             if data.isEmpty && !failsOnEmptyData {
                 return NSNull()
             }
-            throw IrisError.jsonMapping(self)
+            throw IrisError.jsonMapping(asRaw())
         }
     }
 
-    /// Maps data received from the signal into a String.
-    ///
-    /// - parameter atKeyPath: Optional key path at which to parse string.
-    func mapString(atKeyPath keyPath: String? = nil) throws -> String {
+    /// 映射为字符串
+    public func mapString(atKeyPath keyPath: String? = nil) throws -> String {
         if let keyPath = keyPath {
-            // Key path was provided, try to parse string at key path
             guard let jsonDictionary = try mapJSON() as? NSDictionary,
                 let string = jsonDictionary.value(forKeyPath: keyPath) as? String else {
-                    throw IrisError.stringMapping(self)
+                    throw IrisError.stringMapping(asRaw())
             }
             return string
         } else {
-            // Key path was not provided, parse entire response as string
             guard let string = String(data: data, encoding: .utf8) else {
-                throw IrisError.stringMapping(self)
+                throw IrisError.stringMapping(asRaw())
             }
             return string
         }
     }
 
-    /// Maps data received from the signal into a Decodable object.
-    ///
-    /// - parameter atKeyPath: Optional key path at which to parse object.
-    /// - parameter using: A `JSONDecoder` instance which is used to decode data to an object.
-    func map<D: Decodable>(_ type: D.Type, atKeyPath keyPath: String? = nil, using decoder: JSONDecoder = JSONDecoder(), failsOnEmptyData: Bool = true) throws -> D {
+    /// 映射为其他 Decodable 类型
+    public func map<D: Decodable>(_ type: D.Type, atKeyPath keyPath: String? = nil, using decoder: JSONDecoder = JSONDecoder(), failsOnEmptyData: Bool = true) throws -> D {
         let serializeToData: (Any) throws -> Data? = { (jsonObject) in
             guard JSONSerialization.isValidJSONObject(jsonObject) else {
                 return nil
@@ -173,14 +155,14 @@ public extension Response {
             do {
                 return try JSONSerialization.data(withJSONObject: jsonObject)
             } catch {
-                throw IrisError.jsonMapping(self)
+                throw IrisError.jsonMapping(self.asRaw())
             }
         }
         let jsonData: Data
         keyPathCheck: if let keyPath = keyPath {
             guard let jsonObject = (try mapJSON(failsOnEmptyData: failsOnEmptyData) as? NSDictionary)?.value(forKeyPath: keyPath) else {
                 if failsOnEmptyData {
-                    throw IrisError.jsonMapping(self)
+                    throw IrisError.jsonMapping(asRaw())
                 } else {
                     jsonData = data
                     break keyPathCheck
@@ -195,12 +177,12 @@ public extension Response {
                 if let data = try serializeToData(wrappedJsonObject) {
                     wrappedJsonData = data
                 } else {
-                    throw IrisError.jsonMapping(self)
+                    throw IrisError.jsonMapping(asRaw())
                 }
                 do {
                     return try decoder.decode(DecodableWrapper<D>.self, from: wrappedJsonData).value
                 } catch let error {
-                    throw IrisError.objectMapping(error, self)
+                    throw IrisError.objectMapping(error, asRaw())
                 }
             }
         } else {
@@ -216,8 +198,29 @@ public extension Response {
             }
             return try decoder.decode(D.self, from: jsonData)
         } catch let error {
-            throw IrisError.objectMapping(error, self)
+            throw IrisError.objectMapping(error, asRaw())
         }
+    }
+    
+    // MARK: - Type Conversion
+    
+    /// 转换为 RawResponse（无模型）
+    public func asRaw() -> RawResponse {
+        RawResponse(statusCode: statusCode, data: data, request: request, response: response)
+    }
+}
+
+// MARK: - RawResponse (typealias)
+
+/// 无模型响应（用于 Plugin）
+public typealias RawResponse = Response<Never>
+
+// MARK: - RawResponse Convenience
+
+public extension Response where Model == Never {
+    /// 创建 RawResponse
+    init(statusCode: Int, data: Data, request: URLRequest? = nil, response: HTTPURLResponse? = nil) {
+        self.init(model: nil, statusCode: statusCode, data: data, request: request, response: response)
     }
 }
 

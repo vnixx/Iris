@@ -88,32 +88,26 @@ final class IrisTests: XCTestCase {
         )
     }
     
-    func testTypedResponse() async throws {
+    func testResponse() async throws {
+        // fire() 返回 Response<User>
         let response = try await Request<User>.getUserWithStub(id: 123).fire()
         
-        // 直接访问 model（泛型的好处！）
-        XCTAssertEqual(response.model.id, 123)
-        XCTAssertEqual(response.model.name, "Stubbed User")
+        // model 是可选的，但 fire() 成功时保证有值
+        XCTAssertNotNil(response.model)
+        XCTAssertEqual(response.model?.id, 123)
+        XCTAssertEqual(response.model?.name, "Stubbed User")
         
-        // 也可以访问 Response 属性
-        XCTAssertEqual(response.statusCode, 200)
-        XCTAssertTrue(response.isSuccess)
-    }
-    
-    func testRawResponse() async throws {
-        // 如果只需要原始 Response（与 Moya 兼容）
-        let response = try await Request<User>.getUserWithStub(id: 123).fireRaw()
-        
-        XCTAssertEqual(response.statusCode, 200)
-        XCTAssertTrue(response.isSuccess)
-        
-        // 手动 map
-        let user = try response.map(User.self)
+        // 使用 unwrap() 获取非可选值
+        let user = try response.unwrap()
         XCTAssertEqual(user.id, 123)
+        
+        // 其他属性
+        XCTAssertEqual(response.statusCode, 200)
+        XCTAssertTrue(response.isSuccess)
     }
     
     func testFetchConvenience() async throws {
-        // 最简便的方式：直接获取 Model
+        // fetch() 直接返回 Model（非可选）
         let user = try await Request<User>.getUserWithStub(id: 456).fetch()
         
         XCTAssertEqual(user.id, 456)
@@ -165,16 +159,29 @@ final class IrisTests: XCTestCase {
     func testResponseConvenienceProperties() async throws {
         let response = try await Request<User>.getUserWithStub(id: 1).fire()
         
-        // 测试便利属性（通过 TypedResponse 访问）
+        // 测试便利属性
         XCTAssertTrue(response.isSuccess)
         XCTAssertFalse(response.isRedirect)
         XCTAssertFalse(response.isClientError)
         XCTAssertFalse(response.isServerError)
         
-        // 访问原始 Response
-        let rawResponse = response.rawResponse
-        let filtered = try rawResponse.filterSuccessfulStatusCodes()
+        // 过滤状态码
+        let filtered = try response.filterSuccessfulStatusCodes()
         XCTAssertEqual(filtered.statusCode, 200)
+    }
+    
+    func testRawResponse() async throws {
+        let response = try await Request<User>.getUserWithStub(id: 1).fire()
+        
+        // 转换为 RawResponse（Response<Never>）
+        let raw: RawResponse = response.asRaw()
+        XCTAssertEqual(raw.statusCode, 200)
+        XCTAssertTrue(raw.isSuccess)
+        XCTAssertNil(raw.model)  // RawResponse 的 model 永远是 nil
+        
+        // RawResponse 也有相同的 mapping 方法
+        let user = try raw.map(User.self)
+        XCTAssertEqual(user.name, "Stubbed User")
     }
 }
 
@@ -197,19 +204,21 @@ final class IrisTests: XCTestCase {
      }
  }
  
- ## 发送请求的三种方式
+ ## 发送请求
  
- // 方式 1: fire() - 返回 TypedResponse<Model>
+ // 方式 1: fire() - 返回 Response<Model>
  let response = try await Request<User>.getUser(id: 123).fire()
- let user = response.model           // 直接访问，不需要 map！
- let statusCode = response.statusCode
- let rawData = response.data
+ let user = response.model!          // model 是可选的
+ let user = try response.unwrap()    // 或者用 unwrap()
  
- // 方式 2: fetch() - 直接返回 Model
+ // 方式 2: fetch() - 直接返回 Model（推荐）
  let user = try await Request<User>.getUser(id: 123).fetch()
  
- // 方式 3: fireRaw() - 返回原始 Response（与 Moya 完全兼容）
- let response = try await Request<User>.getUser(id: 123).fireRaw()
- let user = try response.map(User.self)
+ ## 类型结构
+ 
+ - Response<Model>: 带泛型的响应
+   - model: Model?（可选，fire() 成功时有值）
+   - statusCode, data, isSuccess 等
+ - RawResponse = Response<Never>: 无模型响应（用于 Plugin）
  
  */

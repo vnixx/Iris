@@ -11,25 +11,25 @@ import Foundation
 public enum IrisError: Swift.Error {
 
     /// Indicates a response failed to map to an image.
-    case imageMapping(Response)
+    case imageMapping(RawResponse)
 
     /// Indicates a response failed to map to a JSON structure.
-    case jsonMapping(Response)
+    case jsonMapping(RawResponse)
 
     /// Indicates a response failed to map to a String.
-    case stringMapping(Response)
+    case stringMapping(RawResponse)
 
     /// Indicates a response failed to map to a Decodable object.
-    case objectMapping(Swift.Error, Response)
+    case objectMapping(Swift.Error, RawResponse)
 
     /// Indicates that Encodable couldn't be encoded into Data
     case encodableMapping(Swift.Error)
 
     /// Indicates a response failed with an invalid HTTP status code.
-    case statusCode(Response)
+    case statusCode(RawResponse)
 
     /// Indicates a response failed due to an underlying `Error`.
-    case underlying(Swift.Error, Response?)
+    case underlying(Swift.Error, RawResponse?)
 
     /// Indicates that an `Endpoint` failed to map to a `URLRequest`.
     case requestMapping(String)
@@ -39,8 +39,8 @@ public enum IrisError: Swift.Error {
 }
 
 public extension IrisError {
-    /// Depending on error type, returns a `Response` object.
-    var response: Response? {
+    /// Depending on error type, returns a `RawResponse` object.
+    var response: RawResponse? {
         switch self {
         case .imageMapping(let response): return response
         case .jsonMapping(let response): return response

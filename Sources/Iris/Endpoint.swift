@@ -88,7 +88,7 @@ public extension Endpoint {
         request.allHTTPHeaderFields = httpHeaderFields
 
         switch task {
-        case .requestPlain, .uploadFile, .uploadMultipart, .uploadMultipartFormData, .downloadDestination:
+        case .requestPlain, .uploadFile, .uploadMultipartFormData, .downloadDestination:
             return request
         case .requestData(let data):
             request.httpBody = data
@@ -99,7 +99,7 @@ public extension Endpoint {
             return try request.encoded(encodable: encodable, encoder: encoder)
         case let .requestParameters(parameters, parameterEncoding):
             return try request.encoded(parameters: parameters, parameterEncoding: parameterEncoding)
-        case let .uploadCompositeMultipart(_, urlParameters), let .uploadCompositeMultipartFormData(_, urlParameters):
+        case let .uploadCompositeMultipartFormData(_, urlParameters):
             let parameterEncoding = URLEncoding(destination: .queryString)
             return try request.encoded(parameters: urlParameters, parameterEncoding: parameterEncoding)
         case let .downloadParameters(parameters, parameterEncoding, _):
@@ -125,8 +125,6 @@ extension Endpoint: Equatable, Hashable {
         switch task {
         case let .uploadFile(file):
             hasher.combine(file)
-        case let .uploadMultipart(multipartData), let .uploadCompositeMultipart(multipartData, _):
-            hasher.combine(multipartData)
         case let .uploadMultipartFormData(multipartFormData), let .uploadCompositeMultipartFormData(multipartFormData, _):
             hasher.combine(multipartFormData)
         default:
@@ -145,9 +143,6 @@ extension Endpoint: Equatable, Hashable {
             switch (lhs.task, rhs.task) {
             case (let .uploadFile(file1), let .uploadFile(file2)):
                 return file1 == file2
-            case (let .uploadMultipart(multipartData1), let .uploadMultipart(multipartData2)),
-                 (let .uploadCompositeMultipart(multipartData1, _), let .uploadCompositeMultipart(multipartData2, _)):
-                return multipartData1 == multipartData2
             case (let .uploadMultipartFormData(multipartFormData1), let .uploadMultipartFormData(multipartFormData2)),
                  (let .uploadCompositeMultipartFormData(multipartFormData1, _), let .uploadCompositeMultipartFormData(multipartFormData2, _)):
                 return multipartFormData1 == multipartFormData2

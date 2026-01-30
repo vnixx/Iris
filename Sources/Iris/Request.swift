@@ -295,14 +295,9 @@ public struct Request<ResponseType: Decodable>: TargetType {
     
     // MARK: - Execution
     
-    /// 发送请求，返回带泛型的 TypedResponse
-    public func fire() async throws -> TypedResponse<ResponseType> {
+    /// 发送请求，返回 Response<Model>
+    public func fire() async throws -> Response<ResponseType> {
         return try await Iris.send(self)
-    }
-    
-    /// 发送请求，返回原始 Response（与 Moya 兼容）
-    public func fireRaw() async throws -> Response {
-        return try await Iris.sendRaw(self)
     }
     
     /// 发送请求并解码为模型
@@ -318,11 +313,20 @@ public extension Request where ResponseType == Empty {
     static func plain() -> Request<Empty> {
         Request<Empty>()
     }
+    
+    /// 创建一个 raw 请求（语义更明确）
+    static func raw() -> Request<Raw> {
+        Request<Raw>()
+    }
 }
+
+/// Raw 请求类型别名（避免显式泛型）
+public typealias RawRequest = Request<Raw>
 
 // MARK: - Empty Response
 
 /// 空响应类型（用于不需要解析响应的请求）
+public typealias Raw = Empty
 public struct Empty: Decodable {
     public init() {}
     

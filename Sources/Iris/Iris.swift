@@ -11,8 +11,8 @@ import Alamofire
 /// Iris 网络请求核心
 public struct Iris {
     
-    /// 发送请求，返回带泛型的 TypedResponse
-    public static func send<Model: Decodable>(_ request: Request<Model>) async throws -> TypedResponse<Model> {
+    /// 发送请求，返回 Response<Model>
+    public static func send<Model: Decodable>(_ request: Request<Model>) async throws -> Response<Model> {
         // 检查是否需要 stub
         let stubBehavior = request.stubBehavior ?? configuration.stubBehavior
         if let stubBehavior = stubBehavior {
@@ -23,22 +23,16 @@ public struct Iris {
         return try await performRequest(request)
     }
     
-    /// 发送请求，返回原始 Response（与 Moya 兼容）
-    public static func sendRaw<Model: Decodable>(_ request: Request<Model>) async throws -> Response {
-        let typedResponse = try await send(request)
-        return typedResponse.rawResponse
-    }
-    
     /// 发送请求并解码为 Model
     public static func fetch<Model: Decodable>(_ request: Request<Model>) async throws -> Model {
-        let typedResponse = try await send(request)
-        return typedResponse.model
+        let response = try await send(request)
+        return try response.unwrap()
     }
     
     // MARK: - Private Methods
     
     /// 执行真实网络请求
-    private static func performRequest<Model: Decodable>(_ request: Request<Model>) async throws -> TypedResponse<Model> {
+    private static func performRequest<Model: Decodable>(_ request: Request<Model>) async throws -> Response<Model> {
         // 1. 创建 Endpoint
         let endpoint = createEndpoint(from: request)
         
@@ -67,38 +61,30 @@ public struct Iris {
         )
         
         // 5. 执行请求
-        let response: Response
+        let rawResponse: RawResponse
         
         switch request.task {
         case .uploadFile(let fileURL):
-            response = try await performUploadFile(urlRequest, fileURL: fileURL, interceptor: interceptor, request: request)
-            
-        case .uploadMultipart(let parts):
-            let formData = MultipartFormData(parts: parts)
-            response = try await performUploadMultipart(urlRequest, formData: formData, interceptor: interceptor, request: request)
+            rawResponse = try await performUploadFile(urlRequest, fileURL: fileURL, interceptor: interceptor, request: request)
             
         case .uploadMultipartFormData(let formData):
-            response = try await performUploadMultipart(urlRequest, formData: formData, interceptor: interceptor, request: request)
-            
-        case .uploadCompositeMultipart(let parts, _):
-            let formData = MultipartFormData(parts: parts)
-            response = try await performUploadMultipart(urlRequest, formData: formData, interceptor: interceptor, request: request)
+            rawResponse = try await performUploadMultipart(urlRequest, formData: formData, interceptor: interceptor, request: request)
             
         case .uploadCompositeMultipartFormData(let formData, _):
-            response = try await performUploadMultipart(urlRequest, formData: formData, interceptor: interceptor, request: request)
+            rawResponse = try await performUploadMultipart(urlRequest, formData: formData, interceptor: interceptor, request: request)
             
         case .downloadDestination(let destination):
-            response = try await performDownload(urlRequest, destination: destination, interceptor: interceptor, request: request)
+            rawResponse = try await performDownload(urlRequest, destination: destination, interceptor: interceptor, request: request)
             
         case .downloadParameters(_, _, let destination):
-            response = try await performDownload(urlRequest, destination: destination, interceptor: interceptor, request: request)
+            rawResponse = try await performDownload(urlRequest, destination: destination, interceptor: interceptor, request: request)
             
         default:
-            response = try await performDataRequest(urlRequest, interceptor: interceptor, request: request)
+            rawResponse = try await performDataRequest(urlRequest, interceptor: interceptor, request: request)
         }
         
         // 6. 通知插件收到响应
-        let result: Result<Response, IrisError> = .success(response)
+        let result: Result<RawResponse, IrisError> = .success(rawResponse)
         configuration.plugins.forEach { $0.didReceive(result, target: request) }
         
         // 7. 应用插件的 process 方法
@@ -109,9 +95,15 @@ public struct Iris {
         
         // 8. 解码并返回
         switch processedResult {
-        case .success(let response):
-            let model = try decodeModel(Model.self, from: response, using: request.decoder)
-            return TypedResponse(model: model, rawResponse: response)
+        case .success(let rawResponse):
+            let model = try decodeModel(Model.self, from: rawResponse, using: request.decoder)
+            return Response(
+                model: model,
+                statusCode: rawResponse.statusCode,
+                data: rawResponse.data,
+                request: rawResponse.request,
+                response: rawResponse.response
+            )
         case .failure(let error):
             throw error
         }
@@ -120,7 +112,7 @@ public struct Iris {
     /// 解码 Model
     private static func decodeModel<Model: Decodable>(
         _ type: Model.Type,
-        from response: Response,
+        from rawResponse: RawResponse,
         using customDecoder: JSONDecoder?
     ) throws -> Model {
         let decoder = customDecoder ?? configuration.jsonDecoder
@@ -129,7 +121,7 @@ public struct Iris {
             return Empty() as! Model
         }
         
-        return try response.map(Model.self, using: decoder)
+        return try rawResponse.map(Model.self, using: decoder)
     }
     
     /// 创建 Endpoint
@@ -150,7 +142,7 @@ public struct Iris {
         _ urlRequest: URLRequest,
         interceptor: IrisRequestInterceptor,
         request: Request<Model>
-    ) async throws -> Response {
+    ) async throws -> RawResponse {
         try await withCheckedThrowingContinuation { continuation in
             let validationCodes = request.validationType.statusCodes
             var afRequest = configuration.session.request(urlRequest, interceptor: interceptor)
@@ -162,7 +154,7 @@ public struct Iris {
             afRequest.responseData { afResponse in
                 switch afResponse.result {
                 case .success(let data):
-                    let response = Response(
+                    let response = RawResponse(
                         statusCode: afResponse.response?.statusCode ?? 0,
                         data: data,
                         request: afResponse.request,
@@ -171,7 +163,7 @@ public struct Iris {
                     continuation.resume(returning: response)
                     
                 case .failure(let error):
-                    let response = Response(
+                    let response = RawResponse(
                         statusCode: afResponse.response?.statusCode ?? 0,
                         data: afResponse.data ?? Data(),
                         request: afResponse.request,
@@ -179,7 +171,6 @@ public struct Iris {
                     )
                     
                     if afResponse.response != nil {
-                        // 有响应但验证失败
                         continuation.resume(throwing: IrisError.statusCode(response))
                     } else {
                         continuation.resume(throwing: IrisError.underlying(error, response))
@@ -195,7 +186,7 @@ public struct Iris {
         fileURL: URL,
         interceptor: IrisRequestInterceptor,
         request: Request<Model>
-    ) async throws -> Response {
+    ) async throws -> RawResponse {
         try await withCheckedThrowingContinuation { continuation in
             let validationCodes = request.validationType.statusCodes
             var afRequest = configuration.session.upload(fileURL, with: urlRequest, interceptor: interceptor)
@@ -207,7 +198,7 @@ public struct Iris {
             afRequest.responseData { afResponse in
                 switch afResponse.result {
                 case .success(let data):
-                    let response = Response(
+                    let response = RawResponse(
                         statusCode: afResponse.response?.statusCode ?? 0,
                         data: data,
                         request: afResponse.request,
@@ -216,7 +207,7 @@ public struct Iris {
                     continuation.resume(returning: response)
                     
                 case .failure(let error):
-                    let response = Response(
+                    let response = RawResponse(
                         statusCode: afResponse.response?.statusCode ?? 0,
                         data: afResponse.data ?? Data(),
                         request: afResponse.request,
@@ -234,7 +225,7 @@ public struct Iris {
         formData: MultipartFormData,
         interceptor: IrisRequestInterceptor,
         request: Request<Model>
-    ) async throws -> Response {
+    ) async throws -> RawResponse {
         try await withCheckedThrowingContinuation { continuation in
             let afFormData = RequestMultipartFormData(fileManager: formData.fileManager, boundary: formData.boundary)
             afFormData.applyMoyaMultipartFormData(formData)
@@ -249,7 +240,7 @@ public struct Iris {
             afRequest.responseData { afResponse in
                 switch afResponse.result {
                 case .success(let data):
-                    let response = Response(
+                    let response = RawResponse(
                         statusCode: afResponse.response?.statusCode ?? 0,
                         data: data,
                         request: afResponse.request,
@@ -258,7 +249,7 @@ public struct Iris {
                     continuation.resume(returning: response)
                     
                 case .failure(let error):
-                    let response = Response(
+                    let response = RawResponse(
                         statusCode: afResponse.response?.statusCode ?? 0,
                         data: afResponse.data ?? Data(),
                         request: afResponse.request,
@@ -276,7 +267,7 @@ public struct Iris {
         destination: @escaping DownloadDestination,
         interceptor: IrisRequestInterceptor,
         request: Request<Model>
-    ) async throws -> Response {
+    ) async throws -> RawResponse {
         try await withCheckedThrowingContinuation { continuation in
             let validationCodes = request.validationType.statusCodes
             var afRequest = configuration.session.download(urlRequest, interceptor: interceptor, to: destination)
@@ -288,7 +279,7 @@ public struct Iris {
             afRequest.responseData { afResponse in
                 switch afResponse.result {
                 case .success(let data):
-                    let response = Response(
+                    let response = RawResponse(
                         statusCode: afResponse.response?.statusCode ?? 0,
                         data: data,
                         request: afResponse.request,
@@ -297,7 +288,7 @@ public struct Iris {
                     continuation.resume(returning: response)
                     
                 case .failure(let error):
-                    let response = Response(
+                    let response = RawResponse(
                         statusCode: afResponse.response?.statusCode ?? 0,
                         data: afResponse.resumeData ?? Data(),
                         request: afResponse.request,
@@ -313,7 +304,7 @@ public struct Iris {
     private static func performStub<Model: Decodable>(
         _ request: Request<Model>,
         behavior: StubBehavior
-    ) async throws -> TypedResponse<Model> {
+    ) async throws -> Response<Model> {
         // 计算延迟
         let delay: TimeInterval
         switch behavior {
@@ -328,8 +319,8 @@ public struct Iris {
             try await _Concurrency.Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         }
         
-        // 创建 Response
-        let response = Response(
+        // 创建 RawResponse
+        let rawResponse = RawResponse(
             statusCode: 200,
             data: request.sampleData,
             request: nil,
@@ -339,11 +330,28 @@ public struct Iris {
         // 通知插件
         let requestType = RequestTypeWrapper(request: nil)
         configuration.plugins.forEach { $0.willSend(requestType, target: request) }
-        configuration.plugins.forEach { $0.didReceive(.success(response), target: request) }
+        let result: Result<RawResponse, IrisError> = .success(rawResponse)
+        configuration.plugins.forEach { $0.didReceive(result, target: request) }
         
-        // 解码并返回
-        let model = try decodeModel(Model.self, from: response, using: request.decoder)
-        return TypedResponse(model: model, rawResponse: response)
+        // 应用插件的 process 方法
+        var processedResult = result
+        for plugin in configuration.plugins {
+            processedResult = plugin.process(processedResult, target: request)
+        }
+        
+        switch processedResult {
+        case .success(let rawResponse):
+            let model = try decodeModel(Model.self, from: rawResponse, using: request.decoder)
+            return Response(
+                model: model,
+                statusCode: rawResponse.statusCode,
+                data: rawResponse.data,
+                request: rawResponse.request,
+                response: rawResponse.response
+            )
+        case .failure(let error):
+            throw error
+        }
     }
 }
 

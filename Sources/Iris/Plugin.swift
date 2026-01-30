@@ -21,17 +21,17 @@ public protocol PluginType {
     func willSend(_ request: RequestType, target: TargetType)
 
     /// Called after a response has been received, but before the MoyaProvider has invoked its completion handler.
-    func didReceive(_ result: Result<Response, IrisError>, target: TargetType)
+    func didReceive(_ result: Result<RawResponse, IrisError>, target: TargetType)
 
     /// Called to modify a result before completion.
-    func process(_ result: Result<Response, IrisError>, target: TargetType) -> Result<Response, IrisError>
+    func process(_ result: Result<RawResponse, IrisError>, target: TargetType) -> Result<RawResponse, IrisError>
 }
 
 public extension PluginType {
     func prepare(_ request: URLRequest, target: TargetType) -> URLRequest { request }
     func willSend(_ request: RequestType, target: TargetType) { }
-    func didReceive(_ result: Result<Response, IrisError>, target: TargetType) { }
-    func process(_ result: Result<Response, IrisError>, target: TargetType) -> Result<Response, IrisError> { result }
+    func didReceive(_ result: Result<RawResponse, IrisError>, target: TargetType) { }
+    func process(_ result: Result<RawResponse, IrisError>, target: TargetType) -> Result<RawResponse, IrisError> { result }
 }
 
 /// Request type used by `willSend` plugin function.
