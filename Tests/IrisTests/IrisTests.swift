@@ -1,6 +1,8 @@
 //
 //  IrisTests.swift
-//  Iris
+//  IrisTests
+//
+//  基础集成测试和 API 使用示例
 //
 
 import XCTest
@@ -8,7 +10,7 @@ import XCTest
 
 // MARK: - 测试用 Model
 
-struct User: Codable {
+struct User: Codable, Equatable {
     let id: Int
     let name: String
 }
@@ -86,6 +88,11 @@ final class IrisTests: XCTestCase {
                 .timeout(30)
                 .stub(.immediate) // 测试时使用 stub
         )
+    }
+    
+    override func tearDown() {
+        Iris.configuration = IrisConfiguration()
+        super.tearDown()
     }
     
     func testResponse() async throws {
@@ -182,6 +189,73 @@ final class IrisTests: XCTestCase {
         // RawResponse 也有相同的 mapping 方法
         let user = try raw.map(User.self)
         XCTAssertEqual(user.name, "Stubbed User")
+    }
+    
+    // MARK: - GitHub API Tests (Iris Style - No enum needed!)
+    
+    func testGitHubZenStub() async throws {
+        // Iris 风格：直接构建请求，无需声明 TargetType 枚举
+        let response = try await Request<Empty>()
+            .baseURL("https://api.github.com")
+            .path("/zen")
+            .method(.get)
+            .stub("Half measures are as bad as nothing at all.".data(using: .utf8)!)
+            .stub(behavior: .immediate)
+            .fire()
+        
+        let message = try response.mapString()
+        XCTAssertEqual(message, "Half measures are as bad as nothing at all.")
+    }
+    
+    func testGitHubUserProfileStub() async throws {
+        // 使用 GitHubAPI 工厂方法（展示 Iris 推荐的 API 封装方式）
+        Iris.configure(IrisConfiguration().stub(.immediate))
+        
+        let response = try await GitHubAPI.userProfile("ashfurrow").fire()
+        
+        XCTAssertEqual(response.model?.login, "ashfurrow")
+        XCTAssertEqual(response.model?.id, 100)
+    }
+    
+    // MARK: - Validation Tests
+    
+    func testValidationWithSuccessStatusCode() async throws {
+        let response = try await Request<User>()
+            .path("/users/1")
+            .validateSuccessCodes()
+            .stub(User(id: 1, name: "Test"))
+            .fire()
+        
+        // Should succeed with 200
+        XCTAssertEqual(response.statusCode, 200)
+    }
+    
+    // MARK: - Multiple Plugins Test
+    
+    func testMultiplePlugins() async throws {
+        let plugin1 = TestingPlugin()
+        let plugin2 = OrderTrackingPlugin()
+        
+        Iris.configure(
+            IrisConfiguration()
+                .baseURL("https://api.example.com")
+                .stub(.immediate)
+                .plugin(plugin1)
+                .plugin(plugin2)
+        )
+        
+        _ = try await Request<User>()
+            .path("/users/1")
+            .stub(User(id: 1, name: "Test"))
+            .fire()
+        
+        // Both plugins should be called
+        // Note: In stub mode, `prepare` is not called (no real URLRequest to prepare)
+        // So only willSend, didReceive, and process are called
+        XCTAssertEqual(plugin1.willSendCalledCount, 1)
+        XCTAssertEqual(plugin1.didReceiveCalledCount, 1)
+        XCTAssertEqual(plugin2.callOrder.count, 3) // willSend, didReceive, process (no prepare in stub mode)
+        XCTAssertEqual(plugin2.callOrder, ["willSend", "didReceive", "process"])
     }
 }
 

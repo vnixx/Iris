@@ -18,6 +18,7 @@ internal typealias URLRequestConvertible = Alamofire.URLRequestConvertible
 
 /// Represents an HTTP method.
 public typealias Method = Alamofire.HTTPMethod
+public typealias HTTPMethod = Alamofire.HTTPMethod
 
 /// Choice of parameter encoding.
 public typealias ParameterEncoding = Alamofire.ParameterEncoding
