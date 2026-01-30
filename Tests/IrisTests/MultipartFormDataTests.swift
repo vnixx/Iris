@@ -2,7 +2,7 @@
 //  MultipartFormDataTests.swift
 //  IrisTests
 //
-//  MultipartFormData 相关测试
+//  Tests for MultipartFormData and MultipartFormBodyPart.
 //
 
 import XCTest

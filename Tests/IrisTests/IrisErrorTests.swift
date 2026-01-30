@@ -2,7 +2,7 @@
 //  IrisErrorTests.swift
 //  IrisTests
 //
-//  IrisError 相关测试
+//  Tests for IrisError types and properties.
 //
 
 import XCTest

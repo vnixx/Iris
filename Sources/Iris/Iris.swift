@@ -2,28 +2,48 @@
 //  Iris.swift
 //  Iris
 //
-//  Iris 特色的 async/await 请求发送
+//  The core networking engine for Iris, featuring async/await based request execution.
 //
 
 import Foundation
 import Alamofire
 
-/// Iris 网络请求核心
+/// The core networking struct of Iris.
+///
+/// Iris provides a modern, type-safe networking layer built on top of Alamofire,
+/// featuring async/await support and a chainable API for building requests.
 public struct Iris {
     
-    /// 发送请求，返回 Response<Model>
+    // MARK: - Public Methods
+    
+    /// Sends a request and returns a `Response<Model>`.
+    ///
+    /// This is the primary method for executing network requests. It handles both
+    /// real network requests and stub responses for testing purposes.
+    ///
+    /// - Parameter request: The `Request` object containing all configuration for the network call.
+    /// - Returns: A `Response<Model>` containing the decoded model and raw response data.
+    /// - Throws: `IrisError` if the request fails or response cannot be decoded.
     public static func send<Model: Decodable>(_ request: Request<Model>) async throws -> Response<Model> {
-        // 检查是否需要 stub
+        // Check if stub behavior is configured
         let stubBehavior = request.stubBehavior ?? configuration.stubBehavior
         if let stubBehavior = stubBehavior {
             return try await performStub(request, behavior: stubBehavior)
         }
         
-        // 执行真实请求
+        // Execute real network request
         return try await performRequest(request)
     }
     
-    /// 发送请求并解码为 Model
+    /// Sends a request and returns the decoded model directly.
+    ///
+    /// This is a convenience method that unwraps the model from the response.
+    /// Use this when you only need the decoded model and don't need access to
+    /// response metadata like status codes or headers.
+    ///
+    /// - Parameter request: The `Request` object containing all configuration for the network call.
+    /// - Returns: The decoded model of type `Model`.
+    /// - Throws: `IrisError` if the request fails or response cannot be decoded.
     public static func fetch<Model: Decodable>(_ request: Request<Model>) async throws -> Model {
         let response = try await send(request)
         return try response.unwrap()
@@ -31,16 +51,28 @@ public struct Iris {
     
     // MARK: - Private Methods
     
-    /// 执行真实网络请求
+    /// Performs the actual network request using Alamofire.
+    ///
+    /// This method handles the complete request lifecycle:
+    /// 1. Creates an `Endpoint` from the request
+    /// 2. Converts the endpoint to a `URLRequest`
+    /// 3. Applies plugins for request preparation
+    /// 4. Executes the appropriate request type (data, upload, download)
+    /// 5. Notifies plugins of response
+    /// 6. Decodes the response into the expected model type
+    ///
+    /// - Parameter request: The `Request` object to execute.
+    /// - Returns: A `Response<Model>` containing the decoded model.
+    /// - Throws: `IrisError` if any step in the request lifecycle fails.
     private static func performRequest<Model: Decodable>(_ request: Request<Model>) async throws -> Response<Model> {
-        // 1. 创建 Endpoint
+        // 1. Create Endpoint
         let endpoint = createEndpoint(from: request)
         
-        // 2. 转换为 URLRequest
+        // 2. Convert to URLRequest
         var urlRequest = try endpoint.urlRequest()
         urlRequest.timeoutInterval = request.timeout
         
-        // 3. 合并默认 Headers
+        // 3. Merge default headers
         var headers = configuration.defaultHeaders
         if let requestHeaders = request.headers {
             headers.merge(requestHeaders) { _, new in new }
@@ -49,7 +81,7 @@ public struct Iris {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
         
-        // 4. 创建 interceptor（桥接 Plugin 系统到 Alamofire）
+        // 4. Create interceptor (bridges Plugin system to Alamofire)
         let interceptor = IrisRequestInterceptor(
             prepare: { urlRequest in
                 configuration.plugins.reduce(urlRequest) { $1.prepare($0, target: request) }
@@ -60,7 +92,7 @@ public struct Iris {
             }
         )
         
-        // 5. 执行请求
+        // 5. Execute request based on task type
         let rawResponse: RawResponse
         
         switch request.task {
@@ -83,17 +115,17 @@ public struct Iris {
             rawResponse = try await performDataRequest(urlRequest, interceptor: interceptor, request: request)
         }
         
-        // 6. 通知插件收到响应
+        // 6. Notify plugins of response
         let result: Result<RawResponse, IrisError> = .success(rawResponse)
         configuration.plugins.forEach { $0.didReceive(result, target: request) }
         
-        // 7. 应用插件的 process 方法
+        // 7. Apply plugin processing
         var processedResult = result
         for plugin in configuration.plugins {
             processedResult = plugin.process(processedResult, target: request)
         }
         
-        // 8. 解码并返回
+        // 8. Decode and return
         switch processedResult {
         case .success(let rawResponse):
             let model = try decodeModel(Model.self, from: rawResponse, using: request.decoder)
@@ -109,7 +141,14 @@ public struct Iris {
         }
     }
     
-    /// 解码 Model
+    /// Decodes the response data into the specified model type.
+    ///
+    /// - Parameters:
+    ///   - type: The type to decode the response into.
+    ///   - rawResponse: The raw response containing the data to decode.
+    ///   - customDecoder: An optional custom JSON decoder. If nil, uses the global configuration decoder.
+    /// - Returns: The decoded model.
+    /// - Throws: `IrisError.objectMapping` if decoding fails.
     private static func decodeModel<Model: Decodable>(
         _ type: Model.Type,
         from rawResponse: RawResponse,
@@ -124,7 +163,10 @@ public struct Iris {
         return try rawResponse.map(Model.self, using: decoder)
     }
     
-    /// 创建 Endpoint
+    /// Creates an `Endpoint` from the given request.
+    ///
+    /// - Parameter request: The request to convert.
+    /// - Returns: An `Endpoint` representing the request.
     private static func createEndpoint<Model: Decodable>(from request: Request<Model>) -> Endpoint {
         let url = request.baseURL.appendingPathComponent(request.path).absoluteString
         
@@ -137,7 +179,14 @@ public struct Iris {
         )
     }
     
-    /// 执行数据请求
+    /// Performs a standard data request using Alamofire.
+    ///
+    /// - Parameters:
+    ///   - urlRequest: The URL request to execute.
+    ///   - interceptor: The request interceptor for plugin integration.
+    ///   - request: The original request for validation configuration.
+    /// - Returns: A `RawResponse` containing the response data.
+    /// - Throws: `IrisError` if the request fails.
     private static func performDataRequest<Model: Decodable>(
         _ urlRequest: URLRequest,
         interceptor: IrisRequestInterceptor,
@@ -180,7 +229,15 @@ public struct Iris {
         }
     }
     
-    /// 执行文件上传
+    /// Performs a file upload request.
+    ///
+    /// - Parameters:
+    ///   - urlRequest: The URL request to execute.
+    ///   - fileURL: The local file URL to upload.
+    ///   - interceptor: The request interceptor for plugin integration.
+    ///   - request: The original request for validation configuration.
+    /// - Returns: A `RawResponse` containing the response data.
+    /// - Throws: `IrisError` if the upload fails.
     private static func performUploadFile<Model: Decodable>(
         _ urlRequest: URLRequest,
         fileURL: URL,
@@ -219,7 +276,15 @@ public struct Iris {
         }
     }
     
-    /// 执行 Multipart 上传
+    /// Performs a multipart form data upload request.
+    ///
+    /// - Parameters:
+    ///   - urlRequest: The URL request to execute.
+    ///   - formData: The multipart form data to upload.
+    ///   - interceptor: The request interceptor for plugin integration.
+    ///   - request: The original request for validation configuration.
+    /// - Returns: A `RawResponse` containing the response data.
+    /// - Throws: `IrisError` if the upload fails.
     private static func performUploadMultipart<Model: Decodable>(
         _ urlRequest: URLRequest,
         formData: MultipartFormData,
@@ -261,7 +326,15 @@ public struct Iris {
         }
     }
     
-    /// 执行下载
+    /// Performs a file download request.
+    ///
+    /// - Parameters:
+    ///   - urlRequest: The URL request to execute.
+    ///   - destination: The closure determining where to save the downloaded file.
+    ///   - interceptor: The request interceptor for plugin integration.
+    ///   - request: The original request for validation configuration.
+    /// - Returns: A `RawResponse` containing the response data.
+    /// - Throws: `IrisError` if the download fails.
     private static func performDownload<Model: Decodable>(
         _ urlRequest: URLRequest,
         destination: @escaping DownloadDestination,
@@ -300,12 +373,22 @@ public struct Iris {
         }
     }
     
-    /// 执行 Stub 请求
+    /// Performs a stub request for testing purposes.
+    ///
+    /// This method simulates a network request by returning the sample data
+    /// configured on the request. It respects the stub behavior configuration
+    /// to optionally add a delay before returning.
+    ///
+    /// - Parameters:
+    ///   - request: The request containing the sample data.
+    ///   - behavior: The stub behavior determining timing of the response.
+    /// - Returns: A `Response<Model>` containing the decoded stub data.
+    /// - Throws: `IrisError` if decoding the stub data fails.
     private static func performStub<Model: Decodable>(
         _ request: Request<Model>,
         behavior: StubBehavior
     ) async throws -> Response<Model> {
-        // 计算延迟
+        // Calculate delay
         let delay: TimeInterval
         switch behavior {
         case .immediate:
@@ -314,12 +397,12 @@ public struct Iris {
             delay = interval
         }
         
-        // 延迟
+        // Apply delay
         if delay > 0 {
             try await _Concurrency.Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         }
         
-        // 创建 RawResponse
+        // Create RawResponse
         let rawResponse = RawResponse(
             statusCode: 200,
             data: request.sampleData,
@@ -327,13 +410,13 @@ public struct Iris {
             response: nil
         )
         
-        // 通知插件
+        // Notify plugins
         let requestType = RequestTypeWrapper(request: nil)
         configuration.plugins.forEach { $0.willSend(requestType, target: request) }
         let result: Result<RawResponse, IrisError> = .success(rawResponse)
         configuration.plugins.forEach { $0.didReceive(result, target: request) }
         
-        // 应用插件的 process 方法
+        // Apply plugin processing
         var processedResult = result
         for plugin in configuration.plugins {
             processedResult = plugin.process(processedResult, target: request)
@@ -357,20 +440,29 @@ public struct Iris {
 
 // MARK: - RequestTypeWrapper
 
-/// 简单的 RequestType 包装
+/// A simple wrapper conforming to `RequestType` for plugin integration.
+///
+/// This wrapper is used internally to provide request information to plugins
+/// during the request lifecycle.
 private struct RequestTypeWrapper: RequestType {
+    
+    /// The underlying URL request.
     let request: URLRequest?
     
+    /// Additional headers from the session configuration.
     var sessionHeaders: [String: String] { [:] }
     
+    /// Authenticates the request with username and password.
     func authenticate(username: String, password: String, persistence: URLCredential.Persistence) -> Self {
         self
     }
     
+    /// Authenticates the request with a credential.
     func authenticate(with credential: URLCredential) -> Self {
         self
     }
     
+    /// Returns a cURL representation of the request.
     func cURLDescription(calling handler: @escaping (String) -> Void) -> Self {
         handler(request?.description ?? "")
         return self

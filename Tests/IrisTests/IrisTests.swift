@@ -2,30 +2,32 @@
 //  IrisTests.swift
 //  IrisTests
 //
-//  基础集成测试和 API 使用示例
+//  Core integration tests and API usage examples.
 //
 
 import XCTest
 @testable import Iris
 
-// MARK: - 测试用 Model
+// MARK: - Test Models
 
+/// A simple user model for testing.
 struct User: Codable, Equatable {
     let id: Int
     let name: String
 }
 
+/// A post model for testing.
 struct Post: Codable {
     let id: Int
     let title: String
     let content: String
 }
 
-// MARK: - API 定义示例（Iris 特色：所有配置集中在一处！）
+// MARK: - API Definition Examples (Iris Style - All configuration in one place!)
 
 extension Request {
     
-    /// 获取用户
+    /// Fetches a single user by ID.
     static func getUser(id: Int) -> Request<User> {
         .init()
             .path("/users/\(id)")
@@ -33,14 +35,14 @@ extension Request {
             .validateSuccessCodes()
     }
     
-    /// 获取用户列表
+    /// Fetches a paginated list of users.
     static func getUsers(page: Int, limit: Int) -> Request<[User]> {
         .init()
             .path("/users")
             .query(["page": page, "limit": limit])
     }
     
-    /// 创建用户
+    /// Creates a new user.
     static func createUser(name: String) -> Request<User> {
         .init()
             .path("/users")
@@ -49,7 +51,7 @@ extension Request {
             .validateSuccessCodes()
     }
     
-    /// 上传头像
+    /// Uploads a user avatar image.
     static func uploadAvatar(userId: Int, imageData: Data) -> Request<User> {
         .init()
             .path("/users/\(userId)/avatar")
@@ -65,7 +67,7 @@ extension Request {
             .timeout(60)
     }
     
-    /// 带 Stub 的请求（用于测试）
+    /// Creates a stubbed request for testing.
     static func getUserWithStub(id: Int) -> Request<User> {
         .init()
             .path("/users/\(id)")
@@ -80,13 +82,13 @@ final class IrisTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
-        // 配置全局设置
+        // Configure global settings
         Iris.configure(
             IrisConfiguration()
                 .baseURL("https://api.example.com")
                 .header("Accept", "application/json")
                 .timeout(30)
-                .stub(.immediate) // 测试时使用 stub
+                .stub(.immediate) // Use stub mode for testing
         )
     }
     
@@ -95,31 +97,35 @@ final class IrisTests: XCTestCase {
         super.tearDown()
     }
     
+    // MARK: - Response Tests
+    
     func testResponse() async throws {
-        // fire() 返回 Response<User>
+        // fire() returns Response<User>
         let response = try await Request<User>.getUserWithStub(id: 123).fire()
         
-        // model 是可选的，但 fire() 成功时保证有值
+        // model is optional but guaranteed to have a value on successful fire()
         XCTAssertNotNil(response.model)
         XCTAssertEqual(response.model?.id, 123)
         XCTAssertEqual(response.model?.name, "Stubbed User")
         
-        // 使用 unwrap() 获取非可选值
+        // Use unwrap() to get non-optional value
         let user = try response.unwrap()
         XCTAssertEqual(user.id, 123)
         
-        // 其他属性
+        // Other properties
         XCTAssertEqual(response.statusCode, 200)
         XCTAssertTrue(response.isSuccess)
     }
     
     func testFetchConvenience() async throws {
-        // fetch() 直接返回 Model（非可选）
+        // fetch() returns Model directly (non-optional)
         let user = try await Request<User>.getUserWithStub(id: 456).fetch()
         
         XCTAssertEqual(user.id, 456)
         XCTAssertEqual(user.name, "Stubbed User")
     }
+    
+    // MARK: - Request Chaining Tests
     
     func testRequestChaining() {
         let request = Request<User>()
@@ -137,6 +143,8 @@ final class IrisTests: XCTestCase {
         XCTAssertEqual(request.validationType, .successCodes)
     }
     
+    // MARK: - Empty Response Tests
+    
     func testEmpty() async throws {
         let request = Request<Empty>
             .plain()
@@ -147,18 +155,20 @@ final class IrisTests: XCTestCase {
         XCTAssertTrue(response.isSuccess)
     }
     
+    // MARK: - Response Mapping Tests
+    
     func testResponseMapping() async throws {
         let response = try await Request<User>.getUserWithStub(id: 1).fire()
         
-        // 转为字符串
+        // Map to string
         let string = try response.mapString()
         XCTAssertNotNil(string)
         
-        // 转为 JSON
+        // Map to JSON
         let json = try response.mapJSON()
         XCTAssertNotNil(json)
         
-        // 转为其他类型
+        // Map to another type
         let user = try response.map(User.self)
         XCTAssertEqual(user.name, "Stubbed User")
     }
@@ -166,27 +176,29 @@ final class IrisTests: XCTestCase {
     func testResponseConvenienceProperties() async throws {
         let response = try await Request<User>.getUserWithStub(id: 1).fire()
         
-        // 测试便利属性
+        // Test convenience properties
         XCTAssertTrue(response.isSuccess)
         XCTAssertFalse(response.isRedirect)
         XCTAssertFalse(response.isClientError)
         XCTAssertFalse(response.isServerError)
         
-        // 过滤状态码
+        // Filter status codes
         let filtered = try response.filterSuccessfulStatusCodes()
         XCTAssertEqual(filtered.statusCode, 200)
     }
     
+    // MARK: - RawResponse Tests
+    
     func testRawResponse() async throws {
         let response = try await Request<User>.getUserWithStub(id: 1).fire()
         
-        // 转换为 RawResponse（Response<Never>）
+        // Convert to RawResponse (Response<Never>)
         let raw: RawResponse = response.asRaw()
         XCTAssertEqual(raw.statusCode, 200)
         XCTAssertTrue(raw.isSuccess)
-        XCTAssertNil(raw.model)  // RawResponse 的 model 永远是 nil
+        XCTAssertNil(raw.model)  // RawResponse's model is always nil
         
-        // RawResponse 也有相同的 mapping 方法
+        // RawResponse has the same mapping methods
         let user = try raw.map(User.self)
         XCTAssertEqual(user.name, "Stubbed User")
     }
@@ -194,7 +206,7 @@ final class IrisTests: XCTestCase {
     // MARK: - GitHub API Tests (Iris Style - No enum needed!)
     
     func testGitHubZenStub() async throws {
-        // Iris 风格：直接构建请求，无需声明 TargetType 枚举
+        // Iris style: Build request directly without declaring a TargetType enum
         let response = try await Request<Empty>()
             .baseURL("https://api.github.com")
             .path("/zen")
@@ -208,7 +220,7 @@ final class IrisTests: XCTestCase {
     }
     
     func testGitHubUserProfileStub() async throws {
-        // 使用 GitHubAPI 工厂方法（展示 Iris 推荐的 API 封装方式）
+        // Using GitHubAPI factory methods (demonstrates Iris's recommended API encapsulation)
         Iris.configure(IrisConfiguration().stub(.immediate))
         
         let response = try await GitHubAPI.userProfile("ashfurrow").fire()
@@ -230,7 +242,7 @@ final class IrisTests: XCTestCase {
         XCTAssertEqual(response.statusCode, 200)
     }
     
-    // MARK: - Multiple Plugins Test
+    // MARK: - Multiple Plugins Tests
     
     func testMultiplePlugins() async throws {
         let plugin1 = TestingPlugin()
@@ -264,10 +276,10 @@ final class IrisTests: XCTestCase {
 /*
  
  ╔════════════════════════════════════════════════════════════════╗
- ║               Iris 使用方式                                     ║
+ ║                    Iris Usage Patterns                         ║
  ╚════════════════════════════════════════════════════════════════╝
  
- ## API 定义（每个请求配置集中在一处！）
+ ## API Definition (All configuration in one place!)
  
  extension Request {
      static func getUser(id: Int) -> Request<User> {
@@ -278,21 +290,21 @@ final class IrisTests: XCTestCase {
      }
  }
  
- ## 发送请求
+ ## Sending Requests
  
- // 方式 1: fire() - 返回 Response<Model>
+ // Method 1: fire() - Returns Response<Model>
  let response = try await Request<User>.getUser(id: 123).fire()
- let user = response.model!          // model 是可选的
- let user = try response.unwrap()    // 或者用 unwrap()
+ let user = response.model!          // model is optional
+ let user = try response.unwrap()    // or use unwrap()
  
- // 方式 2: fetch() - 直接返回 Model（推荐）
+ // Method 2: fetch() - Returns Model directly (recommended)
  let user = try await Request<User>.getUser(id: 123).fetch()
  
- ## 类型结构
+ ## Type Structure
  
- - Response<Model>: 带泛型的响应
-   - model: Model?（可选，fire() 成功时有值）
-   - statusCode, data, isSuccess 等
- - RawResponse = Response<Never>: 无模型响应（用于 Plugin）
+ - Response<Model>: Generic response type
+   - model: Model? (optional, has value on successful fire())
+   - statusCode, data, isSuccess, etc.
+ - RawResponse = Response<Never>: Response without model (used in plugins)
  
  */

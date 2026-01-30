@@ -2,7 +2,7 @@
 //  StubTests.swift
 //  IrisTests
 //
-//  Stub 模式集成测试
+//  Integration tests for stub mode.
 //
 
 import XCTest

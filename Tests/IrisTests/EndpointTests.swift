@@ -2,7 +2,7 @@
 //  EndpointTests.swift
 //  IrisTests
 //
-//  Endpoint 相关测试
+//  Tests for the Endpoint class and URLRequest conversion.
 //
 
 import XCTest
@@ -10,7 +10,7 @@ import XCTest
 
 final class EndpointTests: XCTestCase {
     
-    /// 简单的测试用 Endpoint（Iris 风格：直接构造，不需要 enum）
+    /// A simple test endpoint (Iris style: direct construction, no enum needed).
     var simpleGitHubEndpoint: Endpoint {
         makeSimpleEndpoint()
     }

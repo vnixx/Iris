@@ -2,7 +2,7 @@
 //  PluginTests.swift
 //  IrisTests
 //
-//  Plugin 相关测试
+//  Tests for the plugin system and various plugin implementations.
 //
 
 import XCTest
@@ -314,6 +314,7 @@ final class PluginTests: XCTestCase {
 
 // MARK: - Mock RequestType
 
+/// A mock implementation of RequestType for testing plugins.
 private struct MockRequestType: RequestType {
     var request: URLRequest?
     var sessionHeaders: [String: String] = [:]

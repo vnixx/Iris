@@ -2,44 +2,94 @@
 //  IrisError.swift
 //  Iris
 //
-//  Copied from Moya (MoyaError)
+//  Defines the error types that Iris can throw.
+//  Based on Moya's MoyaError.
 //
 
 import Foundation
 
 /// A type representing possible errors Iris can throw.
+///
+/// `IrisError` provides detailed information about what went wrong during
+/// a network request. Each case represents a different type of failure,
+/// from response mapping issues to network-level errors.
+///
+/// Example:
+/// ```swift
+/// do {
+///     let user = try await request.fetch()
+/// } catch let error as IrisError {
+///     switch error {
+///     case .statusCode(let response):
+///         print("Server returned status \(response.statusCode)")
+///     case .objectMapping(let decodingError, _):
+///         print("Failed to decode: \(decodingError)")
+///     case .underlying(let error, _):
+///         print("Network error: \(error)")
+///     default:
+///         print("Other error: \(error)")
+///     }
+/// }
+/// ```
 public enum IrisError: Swift.Error {
 
     /// Indicates a response failed to map to an image.
+    ///
+    /// This occurs when the response data cannot be converted to a `UIImage` or `NSImage`.
     case imageMapping(RawResponse)
 
     /// Indicates a response failed to map to a JSON structure.
+    ///
+    /// This occurs when `JSONSerialization` fails to parse the response data.
     case jsonMapping(RawResponse)
 
     /// Indicates a response failed to map to a String.
+    ///
+    /// This occurs when the response data cannot be converted to a UTF-8 string.
     case stringMapping(RawResponse)
 
     /// Indicates a response failed to map to a Decodable object.
+    ///
+    /// The associated `Error` contains the underlying decoding error with details
+    /// about what went wrong during `Decodable` conformance.
     case objectMapping(Swift.Error, RawResponse)
 
-    /// Indicates that Encodable couldn't be encoded into Data
+    /// Indicates that an Encodable object couldn't be encoded into Data.
+    ///
+    /// This occurs when `JSONEncoder` fails to encode the request body.
     case encodableMapping(Swift.Error)
 
     /// Indicates a response failed with an invalid HTTP status code.
+    ///
+    /// This error is thrown when validation is enabled and the response status code
+    /// falls outside the acceptable range.
     case statusCode(RawResponse)
 
-    /// Indicates a response failed due to an underlying `Error`.
+    /// Indicates a response failed due to an underlying error.
+    ///
+    /// This wraps errors from the underlying networking layer (Alamofire/URLSession).
+    /// The response may be nil if the error occurred before receiving a response.
     case underlying(Swift.Error, RawResponse?)
 
     /// Indicates that an `Endpoint` failed to map to a `URLRequest`.
+    ///
+    /// This typically occurs when the URL string is malformed.
     case requestMapping(String)
 
     /// Indicates that an `Endpoint` failed to encode the parameters for the `URLRequest`.
+    ///
+    /// This wraps parameter encoding errors from Alamofire.
     case parameterEncoding(Swift.Error)
 }
 
+// MARK: - Response Property
+
 public extension IrisError {
-    /// Depending on error type, returns a `RawResponse` object.
+    
+    /// The associated response object, if available.
+    ///
+    /// This allows access to the response data even when an error occurred,
+    /// which can be useful for debugging or extracting error messages from the server.
     var response: RawResponse? {
         switch self {
         case .imageMapping(let response): return response
@@ -54,7 +104,10 @@ public extension IrisError {
         }
     }
 
-    /// Depending on error type, returns an underlying `Error`.
+    /// The underlying error, if available.
+    ///
+    /// For errors that wrap another error (like `objectMapping` or `underlying`),
+    /// this property provides access to the original error for detailed debugging.
     var underlyingError: Swift.Error? {
         switch self {
         case .imageMapping: return nil
@@ -73,6 +126,8 @@ public extension IrisError {
 // MARK: - Error Descriptions
 
 extension IrisError: LocalizedError {
+    
+    /// A human-readable description of the error.
     public var errorDescription: String? {
         switch self {
         case .imageMapping:
@@ -100,6 +155,8 @@ extension IrisError: LocalizedError {
 // MARK: - Error User Info
 
 extension IrisError: CustomNSError {
+    
+    /// User info dictionary for NSError bridging.
     public var errorUserInfo: [String: Any] {
         var userInfo: [String: Any] = [:]
         userInfo[NSLocalizedDescriptionKey] = errorDescription

@@ -2,7 +2,7 @@
 //  CancellableTests.swift
 //  IrisTests
 //
-//  Cancellable 相关测试
+//  Tests for the Cancellable protocol and implementations.
 //
 
 import XCTest

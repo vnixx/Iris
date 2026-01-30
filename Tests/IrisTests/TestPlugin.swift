@@ -2,20 +2,39 @@
 //  TestPlugin.swift
 //  IrisTests
 //
-//  测试用插件
+//  Test plugins for verifying plugin system behavior.
 //
 
 import Foundation
 @testable import Iris
 
-/// 测试用插件
+// MARK: - TestingPlugin
+
+/// A comprehensive testing plugin that tracks all plugin method calls.
+///
+/// Use this plugin in tests to verify that plugins are called correctly
+/// at each stage of the request lifecycle.
 final class TestingPlugin: PluginType {
+    
+    /// The last request and target passed to willSend.
     var request: (RequestType, TargetType)?
+    
+    /// The last result passed to didReceive.
     var result: Result<RawResponse, IrisError>?
+    
+    /// Whether prepare was called before willSend.
     var didPrepare = false
+    
+    /// Number of times prepare was called.
     var prepareCalledCount = 0
+    
+    /// Number of times willSend was called.
     var willSendCalledCount = 0
+    
+    /// Number of times didReceive was called.
     var didReceiveCalledCount = 0
+    
+    /// Number of times process was called.
     var processCalledCount = 0
     
     func prepare(_ request: URLRequest, target: TargetType) -> URLRequest {
@@ -29,8 +48,7 @@ final class TestingPlugin: PluginType {
         willSendCalledCount += 1
         self.request = (request, target)
         
-        // We check for whether or not we did prepare here to make sure prepare gets called
-        // before willSend
+        // Check that prepare was called before willSend
         didPrepare = request.request?.allHTTPHeaderFields?["prepared"] == "yes"
     }
     
@@ -56,6 +74,7 @@ final class TestingPlugin: PluginType {
         return result
     }
     
+    /// Resets all tracked state.
     func reset() {
         request = nil
         result = nil
@@ -67,8 +86,14 @@ final class TestingPlugin: PluginType {
     }
 }
 
-/// 记录调用顺序的插件
+// MARK: - OrderTrackingPlugin
+
+/// A plugin that tracks the order of method calls.
+///
+/// Use this to verify that plugin methods are called in the expected order.
 final class OrderTrackingPlugin: PluginType {
+    
+    /// The order in which methods were called.
     var callOrder: [String] = []
     
     func prepare(_ request: URLRequest, target: TargetType) -> URLRequest {
@@ -89,16 +114,28 @@ final class OrderTrackingPlugin: PluginType {
         return result
     }
     
+    /// Resets the call order tracking.
     func reset() {
         callOrder = []
     }
 }
 
-/// 修改请求头的插件
+// MARK: - HeaderModifyingPlugin
+
+/// A plugin that adds a custom header to requests.
 final class HeaderModifyingPlugin: PluginType {
+    
+    /// The header key to add.
     let headerKey: String
+    
+    /// The header value to add.
     let headerValue: String
     
+    /// Creates a new header modifying plugin.
+    ///
+    /// - Parameters:
+    ///   - headerKey: The header field name.
+    ///   - headerValue: The header field value.
     init(headerKey: String, headerValue: String) {
         self.headerKey = headerKey
         self.headerValue = headerValue
@@ -111,10 +148,17 @@ final class HeaderModifyingPlugin: PluginType {
     }
 }
 
-/// 修改响应的插件
+// MARK: - ResponseModifyingPlugin
+
+/// A plugin that modifies the response status code.
 final class ResponseModifyingPlugin: PluginType {
+    
+    /// The new status code to set.
     let newStatusCode: Int
     
+    /// Creates a new response modifying plugin.
+    ///
+    /// - Parameter newStatusCode: The status code to set on responses.
     init(newStatusCode: Int) {
         self.newStatusCode = newStatusCode
     }
@@ -133,10 +177,17 @@ final class ResponseModifyingPlugin: PluginType {
     }
 }
 
-/// 错误注入插件
+// MARK: - ErrorInjectingPlugin
+
+/// A plugin that injects an error into all responses.
 final class ErrorInjectingPlugin: PluginType {
+    
+    /// The error to inject.
     let error: IrisError
     
+    /// Creates a new error injecting plugin.
+    ///
+    /// - Parameter error: The error to return for all requests.
     init(error: IrisError) {
         self.error = error
     }
@@ -146,17 +197,28 @@ final class ErrorInjectingPlugin: PluginType {
     }
 }
 
-/// 网络活动追踪插件
+// MARK: - NetworkActivityPlugin
+
+/// A plugin that tracks network activity changes.
+///
+/// Use this to test that network activity indicators are properly shown/hidden.
 final class NetworkActivityPlugin: PluginType {
+    
+    /// The type of network activity change.
     enum NetworkActivityChangeType {
         case began
         case ended
     }
     
+    /// Closure type for network activity changes.
     typealias NetworkActivityClosure = (_ change: NetworkActivityChangeType, _ target: TargetType) -> Void
     
+    /// The closure called when network activity changes.
     let networkActivityClosure: NetworkActivityClosure
     
+    /// Creates a new network activity plugin.
+    ///
+    /// - Parameter networkActivityClosure: Called when activity starts or ends.
     init(networkActivityClosure: @escaping NetworkActivityClosure) {
         self.networkActivityClosure = networkActivityClosure
     }
@@ -170,7 +232,11 @@ final class NetworkActivityPlugin: PluginType {
     }
 }
 
-/// 空插件（用于测试默认实现）
+// MARK: - EmptyPlugin
+
+/// An empty plugin that uses all default implementations.
+///
+/// Use this to test that the default plugin implementations work correctly.
 final class EmptyPlugin: PluginType {
-    // 使用默认实现
+    // Uses all default implementations
 }

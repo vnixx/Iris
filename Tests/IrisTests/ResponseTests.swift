@@ -2,7 +2,7 @@
 //  ResponseTests.swift
 //  IrisTests
 //
-//  Response 映射相关测试
+//  Tests for Response mapping and filtering.
 //
 
 import XCTest

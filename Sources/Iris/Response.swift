@@ -2,38 +2,78 @@
 //  Response.swift
 //  Iris
 //
-//  基于 Moya Response，添加泛型支持
+//  Represents a network response with generic model support.
+//  Based on Moya's Response class with enhanced type safety.
 //
 
 import Foundation
 #if canImport(UIKit)
 import UIKit
+/// Platform-specific image type alias.
 public typealias Image = UIImage
 #elseif canImport(AppKit)
 import AppKit
+/// Platform-specific image type alias.
 public typealias Image = NSImage
 #endif
 
 // MARK: - Response
 
-/// 网络响应
+/// Represents a network response with an optional decoded model.
+///
+/// `Response` is a generic struct that contains both the raw response data
+/// and an optionally decoded model. This allows access to both the parsed
+/// result and the original response metadata.
+///
+/// The model is optional because:
+/// - In plugin scenarios, the model may not be decoded yet
+/// - Some responses may not have a body to decode
+/// - The decoding might intentionally be deferred
+///
+/// Example:
+/// ```swift
+/// let response = try await Request<User>.getUser(id: 1).fire()
+///
+/// // Access the decoded model
+/// if let user = response.model {
+///     print(user.name)
+/// }
+///
+/// // Or use unwrap() for a non-optional result
+/// let user = try response.unwrap()
+///
+/// // Access response metadata
+/// print("Status: \(response.statusCode)")
+/// print("Success: \(response.isSuccess)")
+/// ```
 public struct Response<Model>: CustomDebugStringConvertible {
     
-    /// 解码后的模型（Plugin 场景为 nil）
+    /// The decoded model (may be nil in plugin scenarios).
+    ///
+    /// When using `fire()`, this will contain the decoded model on success.
+    /// When using the response in plugins or before decoding, this may be nil.
     public let model: Model?
     
-    /// 状态码
+    /// The HTTP status code of the response.
     public let statusCode: Int
 
-    /// 响应数据
+    /// The raw response data.
     public let data: Data
 
-    /// 原始 URLRequest
+    /// The original URLRequest, if available.
     public let request: URLRequest?
 
-    /// HTTPURLResponse 对象
+    /// The HTTPURLResponse object, if available.
     public let response: HTTPURLResponse?
 
+    /// Creates a new `Response`.
+    ///
+    /// - Parameters:
+    ///   - model: The decoded model (optional).
+    ///   - statusCode: The HTTP status code.
+    ///   - data: The response body data.
+    ///   - request: The original URL request.
+    ///   - response: The HTTP URL response.
     public init(model: Model? = nil, statusCode: Int, data: Data, request: URLRequest? = nil, response: HTTPURLResponse? = nil) {
         self.model = model
         self.statusCode = statusCode
@@ -42,17 +82,23 @@ public struct Response<Model>: CustomDebugStringConvertible {
         self.response = response
     }
 
-    /// 文本描述
+    /// A text description of the response.
     public var description: String {
         "Status Code: \(statusCode), Data Length: \(data.count)"
     }
 
-    /// 调试描述
+    /// A text description suitable for debugging.
     public var debugDescription: String { description }
     
     // MARK: - Model Access
     
-    /// 获取 model，如果为 nil 则抛出错误
+    /// Returns the model, throwing an error if it's nil.
+    ///
+    /// Use this method when you need a non-optional model and want to
+    /// handle the nil case as an error.
+    ///
+    /// - Returns: The decoded model.
+    /// - Throws: `IrisError.objectMapping` if the model is nil.
     public func unwrap() throws -> Model {
         guard let model else {
             throw IrisError.objectMapping(
@@ -65,29 +111,33 @@ public struct Response<Model>: CustomDebugStringConvertible {
     
     // MARK: - Convenience Properties
     
-    /// 是否成功 (2xx)
+    /// Whether the response indicates success (status code 2xx).
     public var isSuccess: Bool {
         (200..<300).contains(statusCode)
     }
     
-    /// 是否重定向 (3xx)
+    /// Whether the response is a redirect (status code 3xx).
     public var isRedirect: Bool {
         (300..<400).contains(statusCode)
     }
     
-    /// 是否客户端错误 (4xx)
+    /// Whether the response indicates a client error (status code 4xx).
     public var isClientError: Bool {
         (400..<500).contains(statusCode)
     }
     
-    /// 是否服务器错误 (5xx)
+    /// Whether the response indicates a server error (status code 5xx).
     public var isServerError: Bool {
         (500..<600).contains(statusCode)
     }
     
-    // MARK: - Mapping Methods
+    // MARK: - Filtering Methods
 
-    /// 过滤状态码
+    /// Returns the response if the status code falls within the specified range.
+    ///
+    /// - Parameter statusCodes: The range of acceptable status codes.
+    /// - Returns: The response if valid.
+    /// - Throws: `IrisError.statusCode` if the status code is outside the range.
     public func filter<R: RangeExpression>(statusCodes: R) throws -> Response where R.Bound == Int {
         guard statusCodes.contains(statusCode) else {
             throw IrisError.statusCode(asRaw())
@@ -95,22 +145,37 @@ public struct Response<Model>: CustomDebugStringConvertible {
         return self
     }
 
-    /// 过滤指定状态码
+    /// Returns the response if it has the specified status code.
+    ///
+    /// - Parameter code: The expected status code.
+    /// - Returns: The response if valid.
+    /// - Throws: `IrisError.statusCode` if the status code doesn't match.
     public func filter(statusCode code: Int) throws -> Response {
         try filter(statusCodes: code...code)
     }
 
-    /// 过滤成功状态码 (2xx)
+    /// Returns the response if the status code is in the 2xx range.
+    ///
+    /// - Returns: The response if successful.
+    /// - Throws: `IrisError.statusCode` if the status code is not 2xx.
     public func filterSuccessfulStatusCodes() throws -> Response {
         try filter(statusCodes: 200...299)
     }
 
-    /// 过滤成功和重定向状态码 (2xx, 3xx)
+    /// Returns the response if the status code is in the 2xx or 3xx range.
+    ///
+    /// - Returns: The response if successful or a redirect.
+    /// - Throws: `IrisError.statusCode` if the status code is not 2xx or 3xx.
     public func filterSuccessfulStatusAndRedirectCodes() throws -> Response {
         try filter(statusCodes: 200...399)
     }
 
-    /// 映射为图片
+    // MARK: - Mapping Methods
+
+    /// Maps the response data to an image.
+    ///
+    /// - Returns: The decoded image.
+    /// - Throws: `IrisError.imageMapping` if the data cannot be converted to an image.
     public func mapImage() throws -> Image {
         guard let image = Image(data: data) else {
             throw IrisError.imageMapping(asRaw())
@@ -118,7 +183,11 @@ public struct Response<Model>: CustomDebugStringConvertible {
         return image
     }
 
-    /// 映射为 JSON
+    /// Maps the response data to a JSON object.
+    ///
+    /// - Parameter failsOnEmptyData: Whether to throw an error on empty data. Default is `true`.
+    /// - Returns: The parsed JSON object.
+    /// - Throws: `IrisError.jsonMapping` if parsing fails.
     public func mapJSON(failsOnEmptyData: Bool = true) throws -> Any {
         do {
             return try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
@@ -130,7 +199,11 @@ public struct Response<Model>: CustomDebugStringConvertible {
         }
     }
 
-    /// 映射为字符串
+    /// Maps the response data to a string.
+    ///
+    /// - Parameter keyPath: Optional key path to extract the string from JSON.
+    /// - Returns: The string value.
+    /// - Throws: `IrisError.stringMapping` if the data cannot be converted to a string.
     public func mapString(atKeyPath keyPath: String? = nil) throws -> String {
         if let keyPath = keyPath {
             guard let jsonDictionary = try mapJSON() as? NSDictionary,
@@ -146,7 +219,17 @@ public struct Response<Model>: CustomDebugStringConvertible {
         }
     }
 
-    /// 映射为其他 Decodable 类型
+    /// Maps the response data to a `Decodable` type.
+    ///
+    /// This method supports extracting nested objects using key paths.
+    ///
+    /// - Parameters:
+    ///   - type: The type to decode to.
+    ///   - keyPath: Optional key path to extract the object from.
+    ///   - decoder: The JSON decoder to use. Default is a new `JSONDecoder`.
+    ///   - failsOnEmptyData: Whether to throw an error on empty data. Default is `true`.
+    /// - Returns: The decoded object.
+    /// - Throws: `IrisError.objectMapping` or `IrisError.jsonMapping` if decoding fails.
     public func map<D: Decodable>(_ type: D.Type, atKeyPath keyPath: String? = nil, using decoder: JSONDecoder = JSONDecoder(), failsOnEmptyData: Bool = true) throws -> D {
         let serializeToData: (Any) throws -> Data? = { (jsonObject) in
             guard JSONSerialization.isValidJSONObject(jsonObject) else {
@@ -204,26 +287,46 @@ public struct Response<Model>: CustomDebugStringConvertible {
     
     // MARK: - Type Conversion
     
-    /// 转换为 RawResponse（无模型）
+    /// Converts this response to a `RawResponse` (without model).
+    ///
+    /// This is useful when you need to pass the response to APIs that
+    /// expect `RawResponse`, such as plugin methods.
+    ///
+    /// - Returns: A `RawResponse` with the same data but no model.
     public func asRaw() -> RawResponse {
         RawResponse(statusCode: statusCode, data: data, request: request, response: response)
     }
 }
 
-// MARK: - RawResponse (typealias)
+// MARK: - RawResponse Type Alias
 
-/// 无模型响应（用于 Plugin）
+/// A response without a decoded model.
+///
+/// `RawResponse` is used in plugin scenarios where the response data
+/// hasn't been decoded yet, or when the response type doesn't matter.
+///
+/// It's defined as `Response<Never>` to indicate that no model is available.
 public typealias RawResponse = Response<Never>
 
 // MARK: - RawResponse Convenience
 
 public extension Response where Model == Never {
-    /// 创建 RawResponse
+    
+    /// Creates a `RawResponse` without a model.
+    ///
+    /// - Parameters:
+    ///   - statusCode: The HTTP status code.
+    ///   - data: The response body data.
+    ///   - request: The original URL request.
+    ///   - response: The HTTP URL response.
     init(statusCode: Int, data: Data, request: URLRequest? = nil, response: HTTPURLResponse? = nil) {
         self.init(model: nil, statusCode: statusCode, data: data, request: request, response: response)
     }
 }
 
+// MARK: - Private Helpers
+
+/// A wrapper for decoding scalar values at key paths.
 private struct DecodableWrapper<T: Decodable>: Decodable {
     let value: T
 }

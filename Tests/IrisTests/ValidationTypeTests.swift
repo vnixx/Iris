@@ -2,7 +2,7 @@
 //  ValidationTypeTests.swift
 //  IrisTests
 //
-//  ValidationType 相关测试
+//  Tests for ValidationType enum and status code validation.
 //
 
 import XCTest

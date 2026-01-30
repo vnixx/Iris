@@ -2,7 +2,7 @@
 //  TestHelpers.swift
 //  IrisTests
 //
-//  测试辅助类和模拟数据
+//  Test helper classes and mock data fixtures.
 //
 
 import Foundation
@@ -10,11 +10,11 @@ import Foundation
 
 // MARK: - API Factories (Iris Style)
 
-/// GitHub API 请求工厂 - 展示 Iris 链式 API 的使用方式
+/// GitHub API request factory - demonstrates Iris chainable API usage.
 enum GitHubAPI {
     static let baseURL = "https://api.github.com"
     
-    /// 获取 Zen 格言
+    /// Fetches the GitHub Zen message.
     static func zen() -> Request<String> {
         Request<String>()
             .baseURL(baseURL)
@@ -23,7 +23,7 @@ enum GitHubAPI {
             .stub("Half measures are as bad as nothing at all.")
     }
     
-    /// 获取用户资料
+    /// Fetches a user's profile by username.
     static func userProfile(_ name: String) -> Request<GitHubUser> {
         Request<GitHubUser>()
             .baseURL(baseURL)
@@ -34,11 +34,11 @@ enum GitHubAPI {
     }
 }
 
-/// HTTPBin API 请求工厂
+/// HTTPBin API request factory for testing various request types.
 enum HTTPBinAPI {
     static let baseURL = "http://httpbin.org"
     
-    /// Basic Auth 请求
+    /// Tests basic authentication.
     static func basicAuth() -> Request<AuthResponse> {
         Request<AuthResponse>()
             .baseURL(baseURL)
@@ -47,7 +47,7 @@ enum HTTPBinAPI {
             .stub(AuthResponse(authenticated: true, user: "user"))
     }
     
-    /// POST 请求
+    /// Tests POST requests.
     static func post() -> Request<HTTPBinResponse> {
         Request<HTTPBinResponse>()
             .baseURL(baseURL)
@@ -56,7 +56,7 @@ enum HTTPBinAPI {
             .stub(HTTPBinResponse.empty)
     }
     
-    /// 文件上传
+    /// Tests file upload.
     static func upload(file: URL) -> Request<HTTPBinResponse> {
         Request<HTTPBinResponse>()
             .baseURL(baseURL)
@@ -66,7 +66,7 @@ enum HTTPBinAPI {
             .stub(HTTPBinResponse.empty)
     }
     
-    /// Multipart 上传
+    /// Tests multipart form upload.
     static func uploadMultipart(
         parts: [MultipartFormBodyPart],
         urlParameters: [String: Any]? = nil
@@ -86,7 +86,7 @@ enum HTTPBinAPI {
         return request
     }
     
-    /// 带验证的上传
+    /// Tests validated multipart upload.
     static func validatedUpload(
         parts: [MultipartFormBodyPart],
         urlParameters: [String: Any]? = nil,
@@ -97,7 +97,7 @@ enum HTTPBinAPI {
         return request
     }
     
-    /// 创建测试用的 multipart 数据
+    /// Creates test multipart form data.
     static func createTestMultipartFormData() -> [MultipartFormBodyPart] {
         let string = "some data"
         guard let data = string.data(using: .utf8) else {
@@ -109,11 +109,11 @@ enum HTTPBinAPI {
     }
 }
 
-/// GitHub UserContent API 请求工厂
+/// GitHubUserContent API request factory for download testing.
 enum GitHubUserContentAPI {
     static let baseURL = "https://raw.githubusercontent.com"
     
-    /// 下载 Moya Web 内容
+    /// Downloads content from the Moya repository.
     static func downloadMoyaWebContent(_ contentPath: String) -> Request<Data> {
         Request<Data>()
             .baseURL(baseURL)
@@ -123,7 +123,7 @@ enum GitHubUserContentAPI {
             .stub(Data(count: 4000))
     }
     
-    /// 请求 Moya Web 内容
+    /// Requests content from the Moya repository.
     static func requestMoyaWebContent(_ contentPath: String) -> Request<Data> {
         Request<Data>()
             .baseURL(baseURL)
@@ -133,6 +133,7 @@ enum GitHubUserContentAPI {
     }
 }
 
+/// Default download destination for file downloads.
 private let defaultDownloadDestination: DownloadDestination = { temporaryURL, response in
     let directoryURLs = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
     
@@ -145,25 +146,27 @@ private let defaultDownloadDestination: DownloadDestination = { temporaryURL, re
 
 // MARK: - Response Models
 
-/// HTTPBin 认证响应
+/// HTTPBin authentication response model.
 struct AuthResponse: Codable, Equatable {
     let authenticated: Bool
     let user: String
 }
 
-/// HTTPBin 响应
+/// HTTPBin response model.
 struct HTTPBinResponse: Codable, Equatable {
     let args: [String: String]
     let data: String
     let files: [String: String]
     let form: [String: String]
     
+    /// Empty response for stubbing.
     static let empty = HTTPBinResponse(args: [:], data: "", files: [:], form: [:])
 }
 
 // MARK: - String Helpers
 
 extension String {
+    /// Returns a URL-escaped version of the string.
     var urlEscaped: String {
         self.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed)!
     }
@@ -172,6 +175,7 @@ extension String {
 // MARK: - URL Helpers
 
 extension URL {
+    /// Creates a random URL with the given file extension.
     static func random(withExtension ext: String) -> URL {
         let directory = FileManager.default.temporaryDirectory
         let name = UUID().uuidString + "." + ext
@@ -181,7 +185,7 @@ extension URL {
 
 // MARK: - Test Fixtures
 
-/// A fixture for testing Decodable mapping
+/// A fixture for testing Decodable mapping with dates.
 struct Issue: Codable, Equatable {
     let title: String
     let createdAt: Date
@@ -194,13 +198,13 @@ struct Issue: Codable, Equatable {
     }
 }
 
-/// A fixture for testing optional Decodable mapping
+/// A fixture for testing optional Decodable mapping.
 struct OptionalIssue: Codable {
     let title: String?
     let createdAt: Date?
 }
 
-/// GitHub User fixture
+/// A GitHub user model for testing.
 struct GitHubUser: Codable, Equatable {
     let login: String
     let id: Int
@@ -208,7 +212,7 @@ struct GitHubUser: Codable, Equatable {
 
 // MARK: - Simple Endpoint Factory
 
-/// 创建简单的测试 Endpoint（用于 Endpoint 类的单元测试）
+/// Creates a simple test endpoint for Endpoint unit tests.
 func makeSimpleEndpoint(
     url: String = "https://api.github.com/zen",
     method: HTTPMethod = .get,
@@ -225,7 +229,7 @@ func makeSimpleEndpoint(
     )
 }
 
-/// 创建失败的 Endpoint
+/// Creates a failure endpoint for testing error cases.
 func makeFailureEndpoint(url: String = "https://api.github.com/zen") -> Endpoint {
     let error = NSError(domain: "com.iris.iriserror", code: 0, userInfo: [NSLocalizedDescriptionKey: "Houston, we have a problem"])
     return Endpoint(
@@ -239,8 +243,9 @@ func makeFailureEndpoint(url: String = "https://api.github.com/zen") -> Endpoint
 
 // MARK: - Test Image Data
 
+/// Minimal valid PNG image data for testing image mapping.
 let testImageData: Data = {
-    // Create a simple 1x1 PNG image
+    // Creates a simple 1x1 PNG image
     // PNG header + minimal IHDR + IDAT + IEND
     let pngData: [UInt8] = [
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
@@ -266,6 +271,7 @@ let testImageData: Data = {
 // MARK: - DispatchQueue Test Helpers
 
 extension DispatchQueue {
+    /// Returns the label of the current dispatch queue.
     class var currentLabel: String? {
         String(validatingUTF8: __dispatch_queue_get_label(nil))
     }

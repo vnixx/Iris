@@ -2,36 +2,85 @@
 //  Configuration.swift
 //  Iris
 //
+//  Global configuration for the Iris networking library.
+//
 
 import Foundation
 import Alamofire
 
-/// Iris 全局配置
+/// Global configuration for Iris networking.
+///
+/// `IrisConfiguration` provides centralized settings that apply to all requests
+/// made through Iris. These include default headers, timeout, JSON coders,
+/// plugins, and stubbing behavior.
+///
+/// Example:
+/// ```swift
+/// // Configure Iris at app startup
+/// Iris.configure(
+///     IrisConfiguration()
+///         .baseURL("https://api.example.com")
+///         .header("Accept", "application/json")
+///         .header("X-API-Version", "v1")
+///         .timeout(30)
+///         .plugin(LoggingPlugin())
+///         .plugin(AuthPlugin())
+/// )
+/// ```
 public struct IrisConfiguration {
-    /// 基础 URL
+    
+    /// The base URL for all requests.
+    ///
+    /// Individual requests can override this with their own base URL.
     public var baseURL: URL?
     
-    /// 默认请求头
+    /// Default headers to include in all requests.
+    ///
+    /// Request-specific headers will be merged with these, with request headers
+    /// taking precedence in case of conflicts.
     public var defaultHeaders: [String: String]
     
-    /// 默认超时时间
+    /// Default timeout interval for requests in seconds.
     public var defaultTimeout: TimeInterval
     
-    /// JSON 解码器
+    /// The JSON decoder used for response parsing.
+    ///
+    /// Configure this to customize date decoding strategies, key decoding, etc.
     public var jsonDecoder: JSONDecoder
     
-    /// JSON 编码器
+    /// The JSON encoder used for request body encoding.
+    ///
+    /// Configure this to customize date encoding strategies, key encoding, etc.
     public var jsonEncoder: JSONEncoder
     
-    /// 插件列表
+    /// The list of plugins to apply to all requests.
+    ///
+    /// Plugins are called in order for request preparation and in reverse order
+    /// for response processing.
     public var plugins: [PluginType]
     
-    /// 自定义 Alamofire Session
+    /// The Alamofire session used for network requests.
+    ///
+    /// Configure this to customize SSL pinning, caching, cookie handling, etc.
     public var session: Session
     
-    /// Stub 行为（nil 表示正常请求）
+    /// The stub behavior for all requests.
+    ///
+    /// Set to a non-nil value to enable stubbing globally. Individual requests
+    /// can override this setting.
     public var stubBehavior: StubBehavior?
     
+    /// Creates a new configuration with default values.
+    ///
+    /// - Parameters:
+    ///   - baseURL: The base URL for requests. Default is nil.
+    ///   - defaultHeaders: Default headers for all requests. Default is empty.
+    ///   - defaultTimeout: Request timeout in seconds. Default is 30.
+    ///   - jsonDecoder: The JSON decoder. Default is a new `JSONDecoder`.
+    ///   - jsonEncoder: The JSON encoder. Default is a new `JSONEncoder`.
+    ///   - plugins: The plugin list. Default is empty.
+    ///   - session: The Alamofire session. Default is `Session.default`.
+    ///   - stubBehavior: The stub behavior. Default is nil (no stubbing).
     public init(
         baseURL: URL? = nil,
         defaultHeaders: [String: String] = [:],
@@ -56,10 +105,15 @@ public struct IrisConfiguration {
 // MARK: - Global Configuration
 
 public extension Iris {
-    /// 全局默认配置
+    
+    /// The global configuration instance.
+    ///
+    /// This configuration applies to all requests made through Iris.
     static var configuration = IrisConfiguration()
     
-    /// 配置 Iris
+    /// Replaces the global configuration.
+    ///
+    /// - Parameter configuration: The new configuration to use.
     static func configure(_ configuration: IrisConfiguration) {
         self.configuration = configuration
     }
@@ -68,77 +122,114 @@ public extension Iris {
 // MARK: - Configuration Builder
 
 public extension IrisConfiguration {
-    /// 链式设置 baseURL
+    
+    /// Sets the base URL from a URL object.
+    ///
+    /// - Parameter url: The base URL.
+    /// - Returns: A new configuration with the updated base URL.
     func baseURL(_ url: URL?) -> IrisConfiguration {
         var config = self
         config.baseURL = url
         return config
     }
     
-    /// 链式设置 baseURL（从字符串）
+    /// Sets the base URL from a string.
+    ///
+    /// - Parameter urlString: The base URL string.
+    /// - Returns: A new configuration with the updated base URL.
     func baseURL(_ urlString: String) -> IrisConfiguration {
         var config = self
         config.baseURL = URL(string: urlString)
         return config
     }
     
-    /// 链式添加默认 Header
+    /// Adds a default header.
+    ///
+    /// - Parameters:
+    ///   - key: The header field name.
+    ///   - value: The header field value.
+    /// - Returns: A new configuration with the added header.
     func header(_ key: String, _ value: String) -> IrisConfiguration {
         var config = self
         config.defaultHeaders[key] = value
         return config
     }
     
-    /// 链式设置默认 Headers
+    /// Merges additional default headers.
+    ///
+    /// - Parameter headers: The headers to merge. Existing headers with the same
+    ///   keys will be overwritten.
+    /// - Returns: A new configuration with the merged headers.
     func headers(_ headers: [String: String]) -> IrisConfiguration {
         var config = self
         config.defaultHeaders.merge(headers) { _, new in new }
         return config
     }
     
-    /// 链式设置超时
+    /// Sets the default timeout.
+    ///
+    /// - Parameter timeout: The timeout in seconds.
+    /// - Returns: A new configuration with the updated timeout.
     func timeout(_ timeout: TimeInterval) -> IrisConfiguration {
         var config = self
         config.defaultTimeout = timeout
         return config
     }
     
-    /// 链式添加插件
+    /// Adds a plugin to the plugin list.
+    ///
+    /// - Parameter plugin: The plugin to add.
+    /// - Returns: A new configuration with the added plugin.
     func plugin(_ plugin: PluginType) -> IrisConfiguration {
         var config = self
         config.plugins.append(plugin)
         return config
     }
     
-    /// 链式设置多个插件
+    /// Adds multiple plugins to the plugin list.
+    ///
+    /// - Parameter plugins: The plugins to add.
+    /// - Returns: A new configuration with the added plugins.
     func plugins(_ plugins: [PluginType]) -> IrisConfiguration {
         var config = self
         config.plugins.append(contentsOf: plugins)
         return config
     }
     
-    /// 链式设置 Session
+    /// Sets the Alamofire session.
+    ///
+    /// - Parameter session: The session to use.
+    /// - Returns: A new configuration with the updated session.
     func session(_ session: Session) -> IrisConfiguration {
         var config = self
         config.session = session
         return config
     }
     
-    /// 链式设置 Stub 行为
+    /// Sets the stub behavior.
+    ///
+    /// - Parameter behavior: The stub behavior to use.
+    /// - Returns: A new configuration with the updated stub behavior.
     func stub(_ behavior: StubBehavior) -> IrisConfiguration {
         var config = self
         config.stubBehavior = behavior
         return config
     }
     
-    /// 链式设置 JSON Decoder
+    /// Sets the JSON decoder.
+    ///
+    /// - Parameter decoder: The decoder to use.
+    /// - Returns: A new configuration with the updated decoder.
     func decoder(_ decoder: JSONDecoder) -> IrisConfiguration {
         var config = self
         config.jsonDecoder = decoder
         return config
     }
     
-    /// 链式设置 JSON Encoder
+    /// Sets the JSON encoder.
+    ///
+    /// - Parameter encoder: The encoder to use.
+    /// - Returns: A new configuration with the updated encoder.
     func encoder(_ encoder: JSONEncoder) -> IrisConfiguration {
         var config = self
         config.jsonEncoder = encoder
@@ -148,11 +239,17 @@ public extension IrisConfiguration {
 
 // MARK: - Stub Behavior
 
-/// Stub 行为
+/// Controls how stub responses are returned.
+///
+/// Stub behavior determines when stubbed responses are returned during testing.
+/// Use this to simulate different network conditions.
 public enum StubBehavior {
-    /// 立即返回
+    
+    /// Return a response immediately without any delay.
     case immediate
     
-    /// 延迟返回
+    /// Return a response after the specified delay.
+    ///
+    /// - Parameter seconds: The delay in seconds before returning the response.
     case delayed(TimeInterval)
 }

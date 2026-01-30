@@ -2,7 +2,7 @@
 //  ConfigurationTests.swift
 //  IrisTests
 //
-//  IrisConfiguration 相关测试
+//  Tests for IrisConfiguration and the chainable configuration API.
 //
 
 import XCTest
@@ -13,12 +13,12 @@ final class ConfigurationTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
-        // 重置全局配置
+        // Reset global configuration
         Iris.configuration = IrisConfiguration()
     }
     
     override func tearDown() {
-        // 重置全局配置
+        // Reset global configuration
         Iris.configuration = IrisConfiguration()
         super.tearDown()
     }
@@ -93,7 +93,7 @@ final class ConfigurationTests: XCTestCase {
             .header("Accept", "application/json")
             .headers(["Content-Type": "application/json", "Accept": "text/html"])
         
-        // 新值应覆盖旧值
+        // New values should override old values
         XCTAssertEqual(config.defaultHeaders["Accept"], "text/html")
         XCTAssertEqual(config.defaultHeaders["Content-Type"], "application/json")
     }

@@ -2,7 +2,7 @@
 //  RequestTests.swift
 //  IrisTests
 //
-//  Request 链式 API 测试
+//  Tests for the Request chainable API.
 //
 
 import XCTest
@@ -12,7 +12,7 @@ final class RequestTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
-        // 重置全局配置
+        // Reset global configuration
         Iris.configuration = IrisConfiguration()
     }
     
