@@ -187,20 +187,24 @@ public final class CancellableToken: Cancellable, CustomDebugStringConvertible {
 ///
 /// This interceptor calls the prepare and willSend plugin methods at the
 /// appropriate points in the request lifecycle.
-final class IrisRequestInterceptor: Alamofire.RequestInterceptor {
+final class IrisRequestInterceptor: Alamofire.RequestInterceptor, @unchecked Sendable {
+    // Note: @unchecked Sendable is safe here because:
+    // 1. Properties are set once at initialization and never mutated after
+    // 2. The closures are only called from Alamofire's internal synchronization
+    // TODO: Consider migrating to actor-based approach in future Swift 6 migration
     
     /// Closure to prepare the request (called during adapt).
-    var prepare: ((URLRequest) -> URLRequest)?
+    let prepare: (@Sendable (URLRequest) -> URLRequest)?
     
     /// Closure called just before the request is sent.
-    var willSend: ((URLRequest) -> Void)?
+    let willSend: (@Sendable (URLRequest) -> Void)?
 
     /// Creates a new interceptor.
     ///
     /// - Parameters:
     ///   - prepare: Closure to modify the request.
     ///   - willSend: Closure called before sending.
-    init(prepare: ((URLRequest) -> URLRequest)? = nil, willSend: ((URLRequest) -> Void)? = nil) {
+    init(prepare: (@Sendable (URLRequest) -> URLRequest)? = nil, willSend: (@Sendable (URLRequest) -> Void)? = nil) {
         self.prepare = prepare
         self.willSend = willSend
     }

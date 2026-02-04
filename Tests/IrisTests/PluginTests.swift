@@ -266,7 +266,7 @@ final class PluginTests: XCTestCase {
         
         let request = URLRequest(url: URL(string: "https://example.com")!)
         let target = Request<Empty>().path("/test")
-        let response = RawResponse(statusCode: 200, data: Data())
+        _ = RawResponse(statusCode: 200, data: Data())
         
         // Simulate plugin chain for prepare
         var modifiedRequest = request

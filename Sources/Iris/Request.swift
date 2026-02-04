@@ -6,6 +6,7 @@
 //  All request configuration is centralized in one place.
 //
 
+import Alamofire
 import Foundation
 
 /// A network request built using a chainable API.

@@ -137,5 +137,5 @@ public protocol RequestType {
     ///
     /// - Parameter handler: A closure that receives the cURL string.
     /// - Returns: Self for chaining.
-    func cURLDescription(calling handler: @escaping (String) -> Void) -> Self
+    func cURLDescription(calling handler: @escaping @Sendable (String) -> Void) -> Self
 }

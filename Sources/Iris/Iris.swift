@@ -82,13 +82,15 @@ public struct Iris {
         }
         
         // 4. Create interceptor (bridges Plugin system to Alamofire)
+        // Capture plugins array to satisfy Sendable requirement
+        let plugins = configuration.plugins
         let interceptor = IrisRequestInterceptor(
-            prepare: { urlRequest in
-                configuration.plugins.reduce(urlRequest) { $1.prepare($0, target: request) }
+            prepare: { @Sendable urlRequest in
+                plugins.reduce(urlRequest) { $1.prepare($0, target: request) }
             },
-            willSend: { urlRequest in
+            willSend: { @Sendable urlRequest in
                 let requestType = RequestTypeWrapper(request: urlRequest)
-                configuration.plugins.forEach { $0.willSend(requestType, target: request) }
+                plugins.forEach { $0.willSend(requestType, target: request) }
             }
         )
         
@@ -463,7 +465,7 @@ private struct RequestTypeWrapper: RequestType {
     }
     
     /// Returns a cURL representation of the request.
-    func cURLDescription(calling handler: @escaping (String) -> Void) -> Self {
+    func cURLDescription(calling handler: @escaping @Sendable (String) -> Void) -> Self {
         handler(request?.description ?? "")
         return self
     }
