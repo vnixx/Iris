@@ -65,7 +65,7 @@ public protocol TargetType {
     ///
     /// This determines how the request body and parameters are configured.
     /// See `Task` for available options like plain requests, uploads, downloads, etc.
-    var task: Task { get }
+    var task: RequestTask { get }
 
     /// The type of validation to perform on the request.
     ///

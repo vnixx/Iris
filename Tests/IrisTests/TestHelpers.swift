@@ -216,7 +216,7 @@ struct GitHubUser: Codable, Equatable {
 func makeSimpleEndpoint(
     url: String = "https://api.github.com/zen",
     method: HTTPMethod = .get,
-    task: Task = .requestPlain,
+    task: RequestTask = .requestPlain,
     sampleData: Data = "Half measures are as bad as nothing at all.".data(using: .utf8)!,
     headers: [String: String]? = ["Title": "Dominar"]
 ) -> Endpoint {

@@ -55,7 +55,7 @@ public struct Request<ResponseType: Decodable>: TargetType {
     public var method: Method = .get
     
     /// The task type defining how the request body is configured.
-    public var task: Task = .requestPlain
+    public var task: RequestTask = .requestPlain
     
     /// Custom HTTP headers for this request.
     public var headers: [String: String]?
@@ -165,7 +165,7 @@ public struct Request<ResponseType: Decodable>: TargetType {
     ///
     /// - Parameter task: The task defining request body configuration.
     /// - Returns: A new request with the updated task.
-    public func task(_ task: Task) -> Request<ResponseType> {
+    public func task(_ task: RequestTask) -> Request<ResponseType> {
         var request = self
         request.task = task
         return request

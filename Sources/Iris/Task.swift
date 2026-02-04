@@ -28,7 +28,7 @@ import Foundation
 /// // Multipart form data
 /// .uploadMultipartFormData(formData)
 /// ```
-public enum Task {
+public enum RequestTask {
 
     /// A request with no additional data.
     ///
