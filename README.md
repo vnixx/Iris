@@ -429,9 +429,9 @@ typealias RawRequest = Request<Raw>
 typealias Raw = Empty
 
 // Create a request without response parsing
-let request = Request<Empty>.plain()
+let request = Request.plain()
 // or
-let request = Request<Empty>.raw()
+let request = Request.raw()
 ```
 
 ## Requirements

@@ -146,7 +146,7 @@ final class IrisTests: XCTestCase {
     // MARK: - Empty Response Tests
     
     func testEmpty() async throws {
-        let request = Request<Empty>
+        let request = Request
             .plain()
             .path("/ping")
             .stub(behavior: .immediate)

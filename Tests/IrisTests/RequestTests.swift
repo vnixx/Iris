@@ -441,7 +441,7 @@ final class RequestTests: XCTestCase {
     // MARK: - Static Factory Tests
     
     func testPlainRequestFactory() {
-        let request = Request<Empty>.plain()
+        let request = Request.plain()
         
         XCTAssertEqual(request.method, .get)
         if case .requestPlain = request.task {
@@ -452,7 +452,7 @@ final class RequestTests: XCTestCase {
     }
     
     func testRawRequestFactory() {
-        let request = Request<Empty>.raw()
+        let request = Request.raw()
         
         XCTAssertEqual(request.method, .get)
     }
