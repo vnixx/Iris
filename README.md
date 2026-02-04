@@ -9,7 +9,7 @@ A modern, type-safe networking library for Swift featuring async/await and a cha
 
 ## Overview
 
-Iris is a networking library built on top of [Alamofire](https://github.com/Alamofire/Alamofire), inspired by [Moya](https://github.com/Moya/Moya). It provides a clean, chainable API for building and executing network requests with full async/await support.
+Iris is a networking library built on top of [Alamofire](https://github.com/Alamofire/Alamofire) and [Moya](https://github.com/Moya/Moya). It provides a clean, chainable API for building and executing network requests with full async/await support.
 
 ### Key Features
 
