@@ -19,9 +19,13 @@ let package = Package(
             targets: ["Iris"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.8.0"),
+    ],
     targets: [
         .target(
-            name: "Iris"
+            name: "Iris",
+            dependencies: ["Alamofire"]
         ),
         .testTarget(
             name: "IrisTests",

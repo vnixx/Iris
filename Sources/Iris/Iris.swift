@@ -2,28 +2,469 @@
 //  Iris.swift
 //  Iris
 //
+//  The core networking engine for Iris, featuring async/await based request execution.
+//
 
 import Foundation
+import Alamofire
 
+/// The core networking struct of Iris.
+///
+/// Iris provides a modern, type-safe networking layer built on top of Alamofire,
+/// featuring async/await support and a chainable API for building requests.
 public struct Iris {
-    public static func send<Model: Decodable>(_ request: Request<Model>) async throws -> HTTPResponse<Model> {
-        print("requesting: \(request.path)")
+    
+    // MARK: - Public Methods
+    
+    /// Sends a request and returns a `Response<Model>`.
+    ///
+    /// This is the primary method for executing network requests. It handles both
+    /// real network requests and stub responses for testing purposes.
+    ///
+    /// - Parameter request: The `Request` object containing all configuration for the network call.
+    /// - Returns: A `Response<Model>` containing the decoded model and raw response data.
+    /// - Throws: `IrisError` if the request fails or response cannot be decoded.
+    public static func send<Model: Decodable>(_ request: Request<Model>) async throws -> Response<Model> {
+        // Check if stub behavior is configured
+        let stubBehavior = request.stubBehavior ?? configuration.stubBehavior
+        if let stubBehavior = stubBehavior {
+            return try await performStub(request, behavior: stubBehavior)
+        }
         
-        // TODO: 实现真实的网络请求
-        // 模拟网络请求
-        let data = """
-        {"id": 1, "name": "phoenix"}
-        """.data(using: .utf8)!
+        // Execute real network request
+        return try await performRequest(request)
+    }
+    
+    /// Sends a request and returns the decoded model directly.
+    ///
+    /// This is a convenience method that unwraps the model from the response.
+    /// Use this when you only need the decoded model and don't need access to
+    /// response metadata like status codes or headers.
+    ///
+    /// - Parameter request: The `Request` object containing all configuration for the network call.
+    /// - Returns: The decoded model of type `Model`.
+    /// - Throws: `IrisError` if the request fails or response cannot be decoded.
+    public static func fetch<Model: Decodable>(_ request: Request<Model>) async throws -> Model {
+        let response = try await send(request)
+        return try response.unwrap()
+    }
+    
+    // MARK: - Private Methods
+    
+    /// Performs the actual network request using Alamofire.
+    ///
+    /// This method handles the complete request lifecycle:
+    /// 1. Creates an `Endpoint` from the request
+    /// 2. Converts the endpoint to a `URLRequest`
+    /// 3. Applies plugins for request preparation
+    /// 4. Executes the appropriate request type (data, upload, download)
+    /// 5. Notifies plugins of response
+    /// 6. Decodes the response into the expected model type
+    ///
+    /// - Parameter request: The `Request` object to execute.
+    /// - Returns: A `Response<Model>` containing the decoded model.
+    /// - Throws: `IrisError` if any step in the request lifecycle fails.
+    private static func performRequest<Model: Decodable>(_ request: Request<Model>) async throws -> Response<Model> {
+        // 1. Create Endpoint
+        let endpoint = createEndpoint(from: request)
         
-        let statusCode = 200
-        let model = try? JSONDecoder().decode(Model.self, from: data)
+        // 2. Convert to URLRequest
+        var urlRequest = try endpoint.urlRequest()
+        urlRequest.timeoutInterval = request.timeout
         
-        return HTTPResponse(
-            statusCode: statusCode,
-            data: data,
-            model: model,
+        // 3. Merge default headers
+        var headers = configuration.defaultHeaders
+        if let requestHeaders = request.headers {
+            headers.merge(requestHeaders) { _, new in new }
+        }
+        for (key, value) in headers {
+            urlRequest.setValue(value, forHTTPHeaderField: key)
+        }
+        
+        // 4. Create interceptor (bridges Plugin system to Alamofire)
+        let interceptor = IrisRequestInterceptor(
+            prepare: { urlRequest in
+                configuration.plugins.reduce(urlRequest) { $1.prepare($0, target: request) }
+            },
+            willSend: { urlRequest in
+                let requestType = RequestTypeWrapper(request: urlRequest)
+                configuration.plugins.forEach { $0.willSend(requestType, target: request) }
+            }
+        )
+        
+        // 5. Execute request based on task type
+        let rawResponse: RawResponse
+        
+        switch request.task {
+        case .uploadFile(let fileURL):
+            rawResponse = try await performUploadFile(urlRequest, fileURL: fileURL, interceptor: interceptor, request: request)
+            
+        case .uploadMultipartFormData(let formData):
+            rawResponse = try await performUploadMultipart(urlRequest, formData: formData, interceptor: interceptor, request: request)
+            
+        case .uploadCompositeMultipartFormData(let formData, _):
+            rawResponse = try await performUploadMultipart(urlRequest, formData: formData, interceptor: interceptor, request: request)
+            
+        case .downloadDestination(let destination):
+            rawResponse = try await performDownload(urlRequest, destination: destination, interceptor: interceptor, request: request)
+            
+        case .downloadParameters(_, _, let destination):
+            rawResponse = try await performDownload(urlRequest, destination: destination, interceptor: interceptor, request: request)
+            
+        default:
+            rawResponse = try await performDataRequest(urlRequest, interceptor: interceptor, request: request)
+        }
+        
+        // 6. Notify plugins of response
+        let result: Result<RawResponse, IrisError> = .success(rawResponse)
+        configuration.plugins.forEach { $0.didReceive(result, target: request) }
+        
+        // 7. Apply plugin processing
+        var processedResult = result
+        for plugin in configuration.plugins {
+            processedResult = plugin.process(processedResult, target: request)
+        }
+        
+        // 8. Decode and return
+        switch processedResult {
+        case .success(let rawResponse):
+            let model = try decodeModel(Model.self, from: rawResponse, using: request.decoder)
+            return Response(
+                model: model,
+                statusCode: rawResponse.statusCode,
+                data: rawResponse.data,
+                request: rawResponse.request,
+                response: rawResponse.response
+            )
+        case .failure(let error):
+            throw error
+        }
+    }
+    
+    /// Decodes the response data into the specified model type.
+    ///
+    /// - Parameters:
+    ///   - type: The type to decode the response into.
+    ///   - rawResponse: The raw response containing the data to decode.
+    ///   - customDecoder: An optional custom JSON decoder. If nil, uses the global configuration decoder.
+    /// - Returns: The decoded model.
+    /// - Throws: `IrisError.objectMapping` if decoding fails.
+    private static func decodeModel<Model: Decodable>(
+        _ type: Model.Type,
+        from rawResponse: RawResponse,
+        using customDecoder: JSONDecoder?
+    ) throws -> Model {
+        let decoder = customDecoder ?? configuration.jsonDecoder
+        
+        if Model.self == Empty.self {
+            return Empty() as! Model
+        }
+        
+        return try rawResponse.map(Model.self, using: decoder)
+    }
+    
+    /// Creates an `Endpoint` from the given request.
+    ///
+    /// - Parameter request: The request to convert.
+    /// - Returns: An `Endpoint` representing the request.
+    private static func createEndpoint<Model: Decodable>(from request: Request<Model>) -> Endpoint {
+        let url = request.baseURL.appendingPathComponent(request.path).absoluteString
+        
+        return Endpoint(
+            url: url,
+            sampleResponseClosure: { .networkResponse(200, request.sampleData) },
+            method: request.method,
+            task: request.task,
+            httpHeaderFields: request.headers
+        )
+    }
+    
+    /// Performs a standard data request using Alamofire.
+    ///
+    /// - Parameters:
+    ///   - urlRequest: The URL request to execute.
+    ///   - interceptor: The request interceptor for plugin integration.
+    ///   - request: The original request for validation configuration.
+    /// - Returns: A `RawResponse` containing the response data.
+    /// - Throws: `IrisError` if the request fails.
+    private static func performDataRequest<Model: Decodable>(
+        _ urlRequest: URLRequest,
+        interceptor: IrisRequestInterceptor,
+        request: Request<Model>
+    ) async throws -> RawResponse {
+        try await withCheckedThrowingContinuation { continuation in
+            let validationCodes = request.validationType.statusCodes
+            var afRequest = configuration.session.request(urlRequest, interceptor: interceptor)
+            
+            if !validationCodes.isEmpty {
+                afRequest = afRequest.validate(statusCode: validationCodes)
+            }
+            
+            afRequest.responseData { afResponse in
+                switch afResponse.result {
+                case .success(let data):
+                    let response = RawResponse(
+                        statusCode: afResponse.response?.statusCode ?? 0,
+                        data: data,
+                        request: afResponse.request,
+                        response: afResponse.response
+                    )
+                    continuation.resume(returning: response)
+                    
+                case .failure(let error):
+                    let response = RawResponse(
+                        statusCode: afResponse.response?.statusCode ?? 0,
+                        data: afResponse.data ?? Data(),
+                        request: afResponse.request,
+                        response: afResponse.response
+                    )
+                    
+                    if afResponse.response != nil {
+                        continuation.resume(throwing: IrisError.statusCode(response))
+                    } else {
+                        continuation.resume(throwing: IrisError.underlying(error, response))
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Performs a file upload request.
+    ///
+    /// - Parameters:
+    ///   - urlRequest: The URL request to execute.
+    ///   - fileURL: The local file URL to upload.
+    ///   - interceptor: The request interceptor for plugin integration.
+    ///   - request: The original request for validation configuration.
+    /// - Returns: A `RawResponse` containing the response data.
+    /// - Throws: `IrisError` if the upload fails.
+    private static func performUploadFile<Model: Decodable>(
+        _ urlRequest: URLRequest,
+        fileURL: URL,
+        interceptor: IrisRequestInterceptor,
+        request: Request<Model>
+    ) async throws -> RawResponse {
+        try await withCheckedThrowingContinuation { continuation in
+            let validationCodes = request.validationType.statusCodes
+            var afRequest = configuration.session.upload(fileURL, with: urlRequest, interceptor: interceptor)
+            
+            if !validationCodes.isEmpty {
+                afRequest = afRequest.validate(statusCode: validationCodes)
+            }
+            
+            afRequest.responseData { afResponse in
+                switch afResponse.result {
+                case .success(let data):
+                    let response = RawResponse(
+                        statusCode: afResponse.response?.statusCode ?? 0,
+                        data: data,
+                        request: afResponse.request,
+                        response: afResponse.response
+                    )
+                    continuation.resume(returning: response)
+                    
+                case .failure(let error):
+                    let response = RawResponse(
+                        statusCode: afResponse.response?.statusCode ?? 0,
+                        data: afResponse.data ?? Data(),
+                        request: afResponse.request,
+                        response: afResponse.response
+                    )
+                    continuation.resume(throwing: IrisError.underlying(error, response))
+                }
+            }
+        }
+    }
+    
+    /// Performs a multipart form data upload request.
+    ///
+    /// - Parameters:
+    ///   - urlRequest: The URL request to execute.
+    ///   - formData: The multipart form data to upload.
+    ///   - interceptor: The request interceptor for plugin integration.
+    ///   - request: The original request for validation configuration.
+    /// - Returns: A `RawResponse` containing the response data.
+    /// - Throws: `IrisError` if the upload fails.
+    private static func performUploadMultipart<Model: Decodable>(
+        _ urlRequest: URLRequest,
+        formData: MultipartFormData,
+        interceptor: IrisRequestInterceptor,
+        request: Request<Model>
+    ) async throws -> RawResponse {
+        try await withCheckedThrowingContinuation { continuation in
+            let afFormData = RequestMultipartFormData(fileManager: formData.fileManager, boundary: formData.boundary)
+            afFormData.applyMoyaMultipartFormData(formData)
+            
+            let validationCodes = request.validationType.statusCodes
+            var afRequest = configuration.session.upload(multipartFormData: afFormData, with: urlRequest, interceptor: interceptor)
+            
+            if !validationCodes.isEmpty {
+                afRequest = afRequest.validate(statusCode: validationCodes)
+            }
+            
+            afRequest.responseData { afResponse in
+                switch afResponse.result {
+                case .success(let data):
+                    let response = RawResponse(
+                        statusCode: afResponse.response?.statusCode ?? 0,
+                        data: data,
+                        request: afResponse.request,
+                        response: afResponse.response
+                    )
+                    continuation.resume(returning: response)
+                    
+                case .failure(let error):
+                    let response = RawResponse(
+                        statusCode: afResponse.response?.statusCode ?? 0,
+                        data: afResponse.data ?? Data(),
+                        request: afResponse.request,
+                        response: afResponse.response
+                    )
+                    continuation.resume(throwing: IrisError.underlying(error, response))
+                }
+            }
+        }
+    }
+    
+    /// Performs a file download request.
+    ///
+    /// - Parameters:
+    ///   - urlRequest: The URL request to execute.
+    ///   - destination: The closure determining where to save the downloaded file.
+    ///   - interceptor: The request interceptor for plugin integration.
+    ///   - request: The original request for validation configuration.
+    /// - Returns: A `RawResponse` containing the response data.
+    /// - Throws: `IrisError` if the download fails.
+    private static func performDownload<Model: Decodable>(
+        _ urlRequest: URLRequest,
+        destination: @escaping DownloadDestination,
+        interceptor: IrisRequestInterceptor,
+        request: Request<Model>
+    ) async throws -> RawResponse {
+        try await withCheckedThrowingContinuation { continuation in
+            let validationCodes = request.validationType.statusCodes
+            var afRequest = configuration.session.download(urlRequest, interceptor: interceptor, to: destination)
+            
+            if !validationCodes.isEmpty {
+                afRequest = afRequest.validate(statusCode: validationCodes)
+            }
+            
+            afRequest.responseData { afResponse in
+                switch afResponse.result {
+                case .success(let data):
+                    let response = RawResponse(
+                        statusCode: afResponse.response?.statusCode ?? 0,
+                        data: data,
+                        request: afResponse.request,
+                        response: afResponse.response
+                    )
+                    continuation.resume(returning: response)
+                    
+                case .failure(let error):
+                    let response = RawResponse(
+                        statusCode: afResponse.response?.statusCode ?? 0,
+                        data: afResponse.resumeData ?? Data(),
+                        request: afResponse.request,
+                        response: afResponse.response
+                    )
+                    continuation.resume(throwing: IrisError.underlying(error, response))
+                }
+            }
+        }
+    }
+    
+    /// Performs a stub request for testing purposes.
+    ///
+    /// This method simulates a network request by returning the sample data
+    /// configured on the request. It respects the stub behavior configuration
+    /// to optionally add a delay before returning.
+    ///
+    /// - Parameters:
+    ///   - request: The request containing the sample data.
+    ///   - behavior: The stub behavior determining timing of the response.
+    /// - Returns: A `Response<Model>` containing the decoded stub data.
+    /// - Throws: `IrisError` if decoding the stub data fails.
+    private static func performStub<Model: Decodable>(
+        _ request: Request<Model>,
+        behavior: StubBehavior
+    ) async throws -> Response<Model> {
+        // Calculate delay
+        let delay: TimeInterval
+        switch behavior {
+        case .immediate:
+            delay = 0
+        case .delayed(let interval):
+            delay = interval
+        }
+        
+        // Apply delay
+        if delay > 0 {
+            try await _Concurrency.Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        }
+        
+        // Create RawResponse
+        let rawResponse = RawResponse(
+            statusCode: 200,
+            data: request.sampleData,
             request: nil,
             response: nil
         )
+        
+        // Notify plugins
+        let requestType = RequestTypeWrapper(request: nil)
+        configuration.plugins.forEach { $0.willSend(requestType, target: request) }
+        let result: Result<RawResponse, IrisError> = .success(rawResponse)
+        configuration.plugins.forEach { $0.didReceive(result, target: request) }
+        
+        // Apply plugin processing
+        var processedResult = result
+        for plugin in configuration.plugins {
+            processedResult = plugin.process(processedResult, target: request)
+        }
+        
+        switch processedResult {
+        case .success(let rawResponse):
+            let model = try decodeModel(Model.self, from: rawResponse, using: request.decoder)
+            return Response(
+                model: model,
+                statusCode: rawResponse.statusCode,
+                data: rawResponse.data,
+                request: rawResponse.request,
+                response: rawResponse.response
+            )
+        case .failure(let error):
+            throw error
+        }
+    }
+}
+
+// MARK: - RequestTypeWrapper
+
+/// A simple wrapper conforming to `RequestType` for plugin integration.
+///
+/// This wrapper is used internally to provide request information to plugins
+/// during the request lifecycle.
+private struct RequestTypeWrapper: RequestType {
+    
+    /// The underlying URL request.
+    let request: URLRequest?
+    
+    /// Additional headers from the session configuration.
+    var sessionHeaders: [String: String] { [:] }
+    
+    /// Authenticates the request with username and password.
+    func authenticate(username: String, password: String, persistence: URLCredential.Persistence) -> Self {
+        self
+    }
+    
+    /// Authenticates the request with a credential.
+    func authenticate(with credential: URLCredential) -> Self {
+        self
+    }
+    
+    /// Returns a cURL representation of the request.
+    func cURLDescription(calling handler: @escaping (String) -> Void) -> Self {
+        handler(request?.description ?? "")
+        return self
     }
 }
