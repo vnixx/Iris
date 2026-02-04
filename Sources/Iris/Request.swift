@@ -192,6 +192,30 @@ public struct Request<ResponseType: Decodable>: TargetType {
         return request
     }
     
+    /// Sets the request body using a builder closure.
+    ///
+    /// This method allows you to dynamically build the JSON body using a closure
+    /// that receives a mutable dictionary reference.
+    ///
+    /// Example:
+    /// ```swift
+    /// Request<User>()
+    ///     .body { json in
+    ///         json["name"] = "John"
+    ///         if includeAge {
+    ///             json["age"] = 30
+    ///         }
+    ///     }
+    /// ```
+    ///
+    /// - Parameter builder: A closure that receives an `inout` dictionary to populate.
+    /// - Returns: A new request with JSON-encoded body.
+    public func body(_ builder: (_ json: inout [String: Any]) -> Void) -> Request<ResponseType> {
+        var parameters: [String: Any] = [:]
+        builder(&parameters)
+        return body(parameters)
+    }
+    
     /// Sets the request body from an Encodable object.
     ///
     /// - Parameter encodable: The object to encode as JSON.
