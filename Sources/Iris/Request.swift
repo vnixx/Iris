@@ -81,6 +81,12 @@ public struct Request<ResponseType: Decodable>: TargetType {
     /// Stub behavior that overrides the global configuration.
     public var stubBehavior: StubBehavior?
     
+    /// Completion handler for processing decoded Alamofire response.
+    ///
+    /// This handler is called after the request completes and response is decoded,
+    /// providing access to the typed response for generic processing like caching or database storage.
+    public var onCompleteHandler: (@Sendable (AFDataResponse<ResponseType>) -> Void)?
+    
     // MARK: - Initialization
     
     /// Creates a new empty request.
@@ -418,6 +424,37 @@ public struct Request<ResponseType: Decodable>: TargetType {
     public func decoder(_ decoder: JSONDecoder) -> Request<ResponseType> {
         var request = self
         request.decoder = decoder
+        return request
+    }
+    
+    /// Sets a completion handler for processing decoded Alamofire response.
+    ///
+    /// Use this for generic response processing logic that applies across requests,
+    /// such as storing to database, caching results, or showing error messages.
+    ///
+    /// This handler is called after the request completes and response is decoded,
+    /// providing the typed model for direct processing.
+    ///
+    /// Example:
+    /// ```swift
+    /// Request<Meet>()
+    ///     .path("/meets/\(id)")
+    ///     .onComplete { resp in
+    ///         switch resp.result {
+    ///         case .success(let model):
+    ///             AppDatabase.shared.saveMeet(model)
+    ///         case .failure:
+    ///             resp.errorMessage()?.showMessage()
+    ///         }
+    ///     }
+    ///     .fetch()
+    /// ```
+    ///
+    /// - Parameter handler: A closure called with the decoded Alamofire response.
+    /// - Returns: A new request with the completion handler.
+    public func onComplete(_ handler: @escaping @Sendable (AFDataResponse<ResponseType>) -> Void) -> Request<ResponseType> {
+        var request = self
+        request.onCompleteHandler = handler
         return request
     }
     

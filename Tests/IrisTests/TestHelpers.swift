@@ -276,3 +276,62 @@ extension DispatchQueue {
         String(validatingUTF8: __dispatch_queue_get_label(nil))
     }
 }
+
+// MARK: - Thread-Safe Test Box
+
+/// A thread-safe container for capturing values in `@Sendable` closures during tests.
+///
+/// Use this to avoid Swift 6 concurrency warnings when capturing mutable state in test closures.
+final class SendableBox<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: T
+    
+    init(_ value: T) {
+        self._value = value
+    }
+    
+    var value: T {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _value
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _value = newValue
+        }
+    }
+}
+
+/// A thread-safe array container for capturing values in `@Sendable` closures during tests.
+final class SendableArray<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _values: [T] = []
+    
+    init() {}
+    
+    var values: [T] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _values
+    }
+    
+    func append(_ value: T) {
+        lock.lock()
+        defer { lock.unlock() }
+        _values.append(value)
+    }
+    
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _values.count
+    }
+    
+    subscript(index: Int) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return _values[index]
+    }
+}

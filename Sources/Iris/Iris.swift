@@ -130,15 +130,67 @@ public struct Iris {
         // 8. Decode and return
         switch processedResult {
         case .success(let rawResponse):
-            let model = try decodeModel(Model.self, from: rawResponse, using: request.decoder)
-            return Response(
-                model: model,
-                statusCode: rawResponse.statusCode,
-                data: rawResponse.data,
-                request: rawResponse.request,
-                response: rawResponse.response
-            )
+            do {
+                let model = try decodeModel(Model.self, from: rawResponse, using: request.decoder)
+                
+                // Call onComplete handler with decoded response
+                if let onCompleteHandler = request.onCompleteHandler {
+                    let afResponse = DataResponse<Model, AFError>(
+                        request: rawResponse.request,
+                        response: rawResponse.response,
+                        data: rawResponse.data,
+                        metrics: nil,
+                        serializationDuration: 0,
+                        result: .success(model)
+                    )
+                    onCompleteHandler(afResponse)
+                }
+                
+                return Response(
+                    model: model,
+                    statusCode: rawResponse.statusCode,
+                    data: rawResponse.data,
+                    request: rawResponse.request,
+                    response: rawResponse.response
+                )
+            } catch {
+                // Call onComplete handler with decoding error
+                if let onCompleteHandler = request.onCompleteHandler {
+                    let afError = AFError.responseSerializationFailed(reason: .decodingFailed(error: error))
+                    let afResponse = DataResponse<Model, AFError>(
+                        request: rawResponse.request,
+                        response: rawResponse.response,
+                        data: rawResponse.data,
+                        metrics: nil,
+                        serializationDuration: 0,
+                        result: .failure(afError)
+                    )
+                    onCompleteHandler(afResponse)
+                }
+                throw error
+            }
         case .failure(let error):
+            // Call onComplete handler with failure
+            if let onCompleteHandler = request.onCompleteHandler {
+                let afError: AFError
+                switch error {
+                case .underlying(let underlying, _):
+                    afError = underlying as? AFError ?? AFError.sessionTaskFailed(error: underlying)
+                case .statusCode(let response):
+                    afError = AFError.responseValidationFailed(reason: .unacceptableStatusCode(code: response.statusCode))
+                default:
+                    afError = AFError.sessionTaskFailed(error: error)
+                }
+                let afResponse = DataResponse<Model, AFError>(
+                    request: nil,
+                    response: nil,
+                    data: nil,
+                    metrics: nil,
+                    serializationDuration: 0,
+                    result: .failure(afError)
+                )
+                onCompleteHandler(afResponse)
+            }
             throw error
         }
     }
@@ -426,15 +478,67 @@ public struct Iris {
         
         switch processedResult {
         case .success(let rawResponse):
-            let model = try decodeModel(Model.self, from: rawResponse, using: request.decoder)
-            return Response(
-                model: model,
-                statusCode: rawResponse.statusCode,
-                data: rawResponse.data,
-                request: rawResponse.request,
-                response: rawResponse.response
-            )
+            do {
+                let model = try decodeModel(Model.self, from: rawResponse, using: request.decoder)
+                
+                // Call onComplete handler with decoded response
+                if let onCompleteHandler = request.onCompleteHandler {
+                    let afResponse = DataResponse<Model, AFError>(
+                        request: rawResponse.request,
+                        response: rawResponse.response,
+                        data: rawResponse.data,
+                        metrics: nil,
+                        serializationDuration: 0,
+                        result: .success(model)
+                    )
+                    onCompleteHandler(afResponse)
+                }
+                
+                return Response(
+                    model: model,
+                    statusCode: rawResponse.statusCode,
+                    data: rawResponse.data,
+                    request: rawResponse.request,
+                    response: rawResponse.response
+                )
+            } catch {
+                // Call onComplete handler with decoding error
+                if let onCompleteHandler = request.onCompleteHandler {
+                    let afError = AFError.responseSerializationFailed(reason: .decodingFailed(error: error))
+                    let afResponse = DataResponse<Model, AFError>(
+                        request: rawResponse.request,
+                        response: rawResponse.response,
+                        data: rawResponse.data,
+                        metrics: nil,
+                        serializationDuration: 0,
+                        result: .failure(afError)
+                    )
+                    onCompleteHandler(afResponse)
+                }
+                throw error
+            }
         case .failure(let error):
+            // Call onComplete handler with failure
+            if let onCompleteHandler = request.onCompleteHandler {
+                let afError: AFError
+                switch error {
+                case .underlying(let underlying, _):
+                    afError = underlying as? AFError ?? AFError.sessionTaskFailed(error: underlying)
+                case .statusCode(let response):
+                    afError = AFError.responseValidationFailed(reason: .unacceptableStatusCode(code: response.statusCode))
+                default:
+                    afError = AFError.sessionTaskFailed(error: error)
+                }
+                let afResponse = DataResponse<Model, AFError>(
+                    request: nil,
+                    response: nil,
+                    data: nil,
+                    metrics: nil,
+                    serializationDuration: 0,
+                    result: .failure(afError)
+                )
+                onCompleteHandler(afResponse)
+            }
             throw error
         }
     }

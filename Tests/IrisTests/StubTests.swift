@@ -314,4 +314,179 @@ final class StubTests: XCTestCase {
         
         XCTAssertEqual(response.model?.login, "customdecoder")
     }
+    
+    // MARK: - OnComplete Handler Tests
+    
+    func testOnCompleteIsCalledWithDecodedModel() async throws {
+        let expectation = XCTestExpectation(description: "onComplete called")
+        let receivedModel = SendableBox<GitHubUser?>(nil)
+        
+        _ = try await Request<GitHubUser>()
+            .path("/users/oncomplete")
+            .stub(GitHubUser(login: "oncomplete", id: 123))
+            .onComplete { response in
+                if case .success(let model) = response.result {
+                    receivedModel.value = model
+                }
+                expectation.fulfill()
+            }
+            .fire()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+        
+        XCTAssertNotNil(receivedModel.value)
+        XCTAssertEqual(receivedModel.value?.login, "oncomplete")
+        XCTAssertEqual(receivedModel.value?.id, 123)
+    }
+    
+    func testOnCompleteIsCalledOnSuccess() async throws {
+        let expectation = XCTestExpectation(description: "onComplete called on success")
+        let wasSuccess = SendableBox(false)
+        
+        _ = try await Request<GitHubUser>()
+            .path("/users/success")
+            .stub(GitHubUser(login: "success", id: 1))
+            .onComplete { response in
+                if case .success = response.result {
+                    wasSuccess.value = true
+                }
+                expectation.fulfill()
+            }
+            .fetch()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+        
+        XCTAssertTrue(wasSuccess.value)
+    }
+    
+    func testOnCompleteIsCalledOnDecodingFailure() async throws {
+        let expectation = XCTestExpectation(description: "onComplete called on failure")
+        let wasFailure = SendableBox(false)
+        
+        // Invalid JSON that won't decode to GitHubUser
+        let invalidData = "not valid json".data(using: .utf8)!
+        
+        do {
+            _ = try await Request<GitHubUser>()
+                .path("/users/invalid")
+                .stub(invalidData)
+                .onComplete { response in
+                    if case .failure = response.result {
+                        wasFailure.value = true
+                    }
+                    expectation.fulfill()
+                }
+                .fire()
+            XCTFail("Expected decoding to fail")
+        } catch {
+            // Expected
+        }
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+        
+        XCTAssertTrue(wasFailure.value)
+    }
+    
+    func testOnCompleteCanSaveToDatabase() async throws {
+        // Simulates a real-world use case: saving to database on completion
+        let savedUsers = SendableArray<GitHubUser>()
+        
+        let user1 = try await Request<GitHubUser>()
+            .path("/users/user1")
+            .stub(GitHubUser(login: "user1", id: 1))
+            .onComplete { response in
+                if case .success(let model) = response.result {
+                    savedUsers.append(model)
+                }
+            }
+            .fetch()
+        
+        let user2 = try await Request<GitHubUser>()
+            .path("/users/user2")
+            .stub(GitHubUser(login: "user2", id: 2))
+            .onComplete { response in
+                if case .success(let model) = response.result {
+                    savedUsers.append(model)
+                }
+            }
+            .fetch()
+        
+        XCTAssertEqual(user1.login, "user1")
+        XCTAssertEqual(user2.login, "user2")
+        XCTAssertEqual(savedUsers.count, 2)
+        XCTAssertEqual(savedUsers[0].login, "user1")
+        XCTAssertEqual(savedUsers[1].login, "user2")
+    }
+    
+    func testOnCompleteReceivesResponseMetadata() async throws {
+        let expectation = XCTestExpectation(description: "onComplete receives metadata")
+        let receivedData = SendableBox<Data?>(nil)
+        
+        let stubData = "{\"login\": \"metadata\", \"id\": 999}".data(using: .utf8)!
+        
+        _ = try await Request<GitHubUser>()
+            .path("/users/metadata")
+            .stub(stubData)
+            .onComplete { response in
+                receivedData.value = response.data
+                expectation.fulfill()
+            }
+            .fire()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+        
+        XCTAssertEqual(receivedData.value, stubData)
+    }
+    
+    func testOnCompleteWithArrayResponse() async throws {
+        let expectation = XCTestExpectation(description: "onComplete with array")
+        let receivedUsers = SendableBox<[GitHubUser]>([])
+        
+        let users = [
+            GitHubUser(login: "array1", id: 1),
+            GitHubUser(login: "array2", id: 2)
+        ]
+        let encoder = JSONEncoder()
+        let stubData = try encoder.encode(users)
+        
+        _ = try await Request<[GitHubUser]>()
+            .path("/users")
+            .stub(stubData)
+            .onComplete { response in
+                if case .success(let models) = response.result {
+                    receivedUsers.value = models
+                }
+                expectation.fulfill()
+            }
+            .fire()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+        
+        XCTAssertEqual(receivedUsers.value.count, 2)
+        XCTAssertEqual(receivedUsers.value[0].login, "array1")
+        XCTAssertEqual(receivedUsers.value[1].login, "array2")
+    }
+    
+    func testOnCompleteWithDelayedStub() async throws {
+        let expectation = XCTestExpectation(description: "onComplete with delayed stub")
+        let completedAt = SendableBox<Date?>(nil)
+        let startTime = Date()
+        let delay: TimeInterval = 0.3
+        
+        _ = try await Request<GitHubUser>()
+            .path("/users/delayed")
+            .stub(GitHubUser(login: "delayed", id: 1))
+            .stub(behavior: .delayed(delay))
+            .onComplete { _ in
+                completedAt.value = Date()
+                expectation.fulfill()
+            }
+            .fire()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+        
+        XCTAssertNotNil(completedAt.value)
+        let elapsed = completedAt.value!.timeIntervalSince(startTime)
+        XCTAssertGreaterThanOrEqual(elapsed, delay * 0.9)
+    }
 }

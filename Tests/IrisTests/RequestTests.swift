@@ -397,6 +397,30 @@ final class RequestTests: XCTestCase {
         }
     }
     
+    // MARK: - OnComplete Configuration Tests
+    
+    func testOnCompleteConfiguration() {
+        let request = Request<Empty>()
+            .onComplete { _ in }
+        
+        XCTAssertNotNil(request.onCompleteHandler)
+    }
+    
+    func testOnCompletePreservesOtherConfiguration() {
+        let request = Request<GitHubUser>()
+            .path("/users/test")
+            .method(.get)
+            .timeout(60)
+            .onComplete { _ in }
+            .validateSuccessCodes()
+        
+        XCTAssertEqual(request.path, "/users/test")
+        XCTAssertEqual(request.method, .get)
+        XCTAssertEqual(request.timeout, 60)
+        XCTAssertEqual(request.validationType, .successCodes)
+        XCTAssertNotNil(request.onCompleteHandler)
+    }
+    
     // MARK: - Chaining Tests
     
     func testCompleteChaining() {
